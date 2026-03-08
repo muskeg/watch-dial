@@ -1,0 +1,49 @@
+@import url('https://fonts.googleapis.com/css2?family=Archivo+Black&family=Bebas+Neue&family=Chivo+Mono:wght@400;700&family=Cinzel:wght@500;700&family=Cormorant+Garamond:wght@500;700&family=DM+Serif+Display&family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Libre+Baskerville:wght@400;700&family=Orbitron:wght@500;700&family=Oswald:wght@400;600;700&family=Rajdhani:wght@500;700&family=Space+Grotesk:wght@400;500;700&display=swap');
+
+:root {
+  color-scheme: dark;
+  --text: #f7efe0;
+  --muted: #a9b8bf;
+  --border: rgba(247, 239, 224, 0.12);
+  --accent: #f4a261;
+  --accent-strong: #6ad0ba;
+  font-family: 'Space Grotesk', sans-serif;
+  font-synthesis: none;
+  line-height: 1.5;
+  font-weight: 400;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background:
+    radial-gradient(circle at top, rgba(244, 162, 97, 0.16), transparent 30%),
+    radial-gradient(circle at 80% 20%, rgba(74, 176, 161, 0.18), transparent 28%),
+    linear-gradient(180deg, #081218 0%, #0d1f29 100%);
+}
+
+body {
+  margin: 0;
+  color: var(--text);
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+}
+
+#root {
+  min-height: 100vh;
+}

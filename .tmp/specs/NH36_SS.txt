@@ -1,0 +1,92 @@
+Watch Movement Specification and Drawing
+Standard Mechanical Movement
+
+NH36A
+Movement Size:
+12‴
+Diameter: Φ27.40mm (Φ29.36mm with Dial Holding Spacer)
+Height:
+5.32mm
+Items
+
+Ver.
+
+Specification
+
+1
+
+Appearance - 1
+
+1
+
+Appearance - 2
+
+1
+
+Casing
+
+1
+
+Hand Fitting
+
+1
+
+Hand Setting Stem
+
+1
+
+Dial
+
+1
+
+Assembly Plan
+
+1
+
+Hands
+
+1
+
+Items
+
+Ver.
+
+Revised on : 16112022
+
+Center post
+
+中心柱位
+
+0D[LPXPKHLJKWIURPPDLQSODWHVXUIDFH
+與機芯平面的最大高度
+
+7RWDOKHLJKWLQFOPRYHPHQW
+機芯總高度
+
+TYPE M 一般針高
+
+TYPE L 高針
+
+TYPE M 一般針高
+TYPE L
+
+高針
+
+TYPE M 一般針高
+TYPE L
+
+高針
+
++RXUZKHHO
+
+&DQQRQSLQLRQ
+
+時針輪
+
+分針輪(十反)
+
+)RXUWKZKHHO
+DQGSLQLRQ
+秒針輪
+
+

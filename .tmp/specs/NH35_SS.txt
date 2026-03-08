@@ -1,0 +1,101 @@
+Watch Movement Specification and Drawing
+Standard Mechanical Movement
+
+NH35A
+Movement Size:
+12‴
+Diameter: Φ27.40mm (Φ29.36mm with Dial Holding Spacer)
+Height:
+5.32mm
+Items
+
+Ver.
+
+Specification
+
+1
+
+Appearance - 1
+
+1
+
+Appearance - 2
+
+1
+
+Casing
+
+1
+
+Hand Fitting
+
+1
+
+Hand Setting Stem
+
+1
+
+Dial - 1
+
+1
+
+Dial - 2
+
+1
+
+Assembly Plan
+
+1
+
+Hands
+
+1
+
+Items
+
+Ver.
+
+Revised on : 16112022
+
+Center post
+
+中心柱位
+
+Maximum height from main plate surface
+
+與機芯平面之最大高度
+Total height incl. movement
+
+機芯總高度
+
+TYPE M 一般針高
+
+TYPE L 高針
+
+Hour wheel
+時針輪
+
+TYPE M
+
+一般針高
+
+TYPE L
+
+高針
+
+TYPE M
+
+一般針高
+
+TYPE L
+
+高針
+
+Cannon pinion
+分針輪(十反)
+
+Fourth wheel
+and pinion
+秒針輪
+
+
