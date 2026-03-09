@@ -54,6 +54,7 @@ type LayerPlacement = 'below-overlays' | 'above-indices' | 'above-numerals';
 type Layer = {
   id: string;
   name: string;
+  creationIndex: number;
   image: HTMLImageElement;
   visible: boolean;
   opacity: number;
@@ -382,6 +383,23 @@ function loadImage(file: File) {
   });
 }
 
+function makeLayer(name: string, image: HTMLImageElement, creationIndex: number): Layer {
+  return {
+    id: createId('layer'),
+    name,
+    creationIndex,
+    image,
+    visible: true,
+    opacity: 1,
+    scale: 1,
+    rotation: 0,
+    offsetX: 0,
+    offsetY: 0,
+    blendMode: 'source-over',
+    placement: 'below-overlays',
+  };
+}
+
 function getLayerRenderMetrics(layer: Layer, size: number): LayerRenderMetrics {
   const baseScale = size / Math.max(layer.image.width, layer.image.height);
 
@@ -428,6 +446,7 @@ function isPointInLayer(point: { x: number; y: number }, metrics: LayerRenderMet
 function App() {
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const previewInteractionRef = useRef<PreviewInteraction | null>(null);
+  const nextLayerIndex = useRef(1);
   const [layers, setLayers] = useState<Layer[]>([]);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [previewCursor, setPreviewCursor] = useState('default');
@@ -472,7 +491,6 @@ function App() {
   const [isDragOver, setIsDragOver] = useState(false);
 
   const dialPixelDiameter = Math.max(1, Math.round((dialDiameterMm / 25.4) * exportDpi));
-  const squarePixelSize = dialPixelDiameter;
   const allDisplayPresets = [CUSTOM_DISPLAY_PRESET, ...builtInDisplayPresets, ...savedDisplayPresets];
   const selectedDisplayPreset = allDisplayPresets.find((preset) => preset.id === displayPresetId) ?? CUSTOM_DISPLAY_PRESET;
   const isSavedDisplayPreset = savedDisplayPresets.some((preset) => preset.id === displayPresetId);
@@ -579,20 +597,9 @@ function App() {
 
     try {
       const loadedLayers = await Promise.all(files.map(loadImage));
+      const indices = loadedLayers.map(() => nextLayerIndex.current++);
       setLayers((current) => [
-        ...loadedLayers.map((item, index) => ({
-          id: `${Date.now()}-${index}`,
-          name: item.name,
-          image: item.image,
-          visible: true,
-          opacity: 1,
-          scale: 1,
-          rotation: 0,
-          offsetX: 0,
-          offsetY: 0,
-          blendMode: 'source-over' as BlendMode,
-          placement: 'below-overlays' as LayerPlacement,
-        })),
+        ...loadedLayers.map((item, i) => makeLayer(item.name, item.image, indices[i])),
         ...current,
       ]);
       setStatusMessage(`${files.length} layer${files.length > 1 ? 's' : ''} loaded.`);
@@ -688,7 +695,8 @@ function App() {
   }
 
   function duplicateLayer(id: string) {
-    let duplicateId: string | null = null;
+    const newId = createId('layer');
+    const newIndex = nextLayerIndex.current++;
 
     setLayers((current) => {
       const index = current.findIndex((layer) => layer.id === id);
@@ -700,19 +708,16 @@ function App() {
       const source = current[index];
       const duplicate: Layer = {
         ...source,
-        id: createId('layer'),
+        id: newId,
+        creationIndex: newIndex,
         name: `${source.name} Copy`,
       };
-      duplicateId = duplicate.id;
       const next = [...current];
       next.splice(index, 0, duplicate);
       return next;
     });
 
-    if (duplicateId) {
-      setSelectedLayerId(duplicateId);
-    }
-
+    setSelectedLayerId(newId);
     setStatusMessage('Layer duplicated.');
   }
 
@@ -939,7 +944,7 @@ function App() {
       previewInteractionRef.current = null;
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
-    setPreviewCursor('default');
+    updatePreviewCursor(getPreviewPoint(event));
   }
 
   function applyDisplayPreset(presetId: string) {
@@ -1031,15 +1036,13 @@ function App() {
     setStatusMessage(`${label} updated.`);
   }
 
-  function deleteSavedDisplayPreset() {
-    if (!isSavedDisplayPreset) {
-      return;
+  function deleteSavedDisplayPreset(targetId: string) {
+    const presetToDelete = savedDisplayPresets.find((preset) => preset.id === targetId);
+    setSavedDisplayPresets((current) => current.filter((preset) => preset.id !== targetId));
+    if (displayPresetId === targetId) {
+      setDisplayPresetId('custom');
+      setCutouts([]);
     }
-
-    const presetToDelete = savedDisplayPresets.find((preset) => preset.id === displayPresetId);
-    setSavedDisplayPresets((current) => current.filter((preset) => preset.id !== displayPresetId));
-    setDisplayPresetId('custom');
-    setCutouts([]);
     setStatusMessage(`${presetToDelete?.label ?? 'Preset'} deleted.`);
   }
 
@@ -1052,7 +1055,7 @@ function App() {
     if (!pendingRemoveId || !pendingRemoveKind) return;
     if (pendingRemoveKind === 'layer') removeLayer(pendingRemoveId);
     if (pendingRemoveKind === 'cutout') removeCutout(pendingRemoveId);
-    if (pendingRemoveKind === 'preset') deleteSavedDisplayPreset();
+    if (pendingRemoveKind === 'preset') deleteSavedDisplayPreset(pendingRemoveId);
     setPendingRemoveId(null);
     setPendingRemoveKind(null);
   }
@@ -1080,20 +1083,9 @@ function App() {
     if (!files.length) return;
     try {
       const loadedLayers = await Promise.all(files.map(loadImage));
+      const indices = loadedLayers.map(() => nextLayerIndex.current++);
       setLayers((current) => [
-        ...loadedLayers.map((item, index) => ({
-          id: `${Date.now()}-${index}`,
-          name: item.name,
-          image: item.image,
-          visible: true,
-          opacity: 1,
-          scale: 1,
-          rotation: 0,
-          offsetX: 0,
-          offsetY: 0,
-          blendMode: 'source-over' as BlendMode,
-          placement: 'below-overlays' as LayerPlacement,
-        })),
+        ...loadedLayers.map((item, i) => makeLayer(item.name, item.image, indices[i])),
         ...current,
       ]);
       setStatusMessage(`${files.length} layer${files.length > 1 ? 's' : ''} loaded.`);
@@ -1250,16 +1242,7 @@ function App() {
     context.save();
     context.translate(x, y);
     context.rotate(degToRad(cutout.rotationDeg));
-    context.moveTo(-width / 2 + radius, -height / 2);
-    context.lineTo(width / 2 - radius, -height / 2);
-    context.quadraticCurveTo(width / 2, -height / 2, width / 2, -height / 2 + radius);
-    context.lineTo(width / 2, height / 2 - radius);
-    context.quadraticCurveTo(width / 2, height / 2, width / 2 - radius, height / 2);
-    context.lineTo(-width / 2 + radius, height / 2);
-    context.quadraticCurveTo(-width / 2, height / 2, -width / 2, height / 2 - radius);
-    context.lineTo(-width / 2, -height / 2 + radius);
-    context.quadraticCurveTo(-width / 2, -height / 2, -width / 2 + radius, -height / 2);
-    context.closePath();
+    context.roundRect(-width / 2, -height / 2, width, height, radius);
     context.restore();
   }
 
@@ -1356,17 +1339,19 @@ function App() {
         context.stroke();
       }
 
-      const triangleRadius = radius * Math.min(0.98, bandOuter + 0.01);
-      const triangleBaseRadius = radius * Math.min(0.98, bandOuter - Math.min(0.02, bandSpan * 0.18));
-      const triangleOffsetY = radius * 0.018;
-      const triangleHalfWidth = radius * 0.06 * markerWeight;
-      context.fillStyle = markerColor;
-      context.beginPath();
-      context.moveTo(center - triangleHalfWidth, center - triangleBaseRadius - triangleOffsetY);
-      context.lineTo(center + triangleHalfWidth, center - triangleBaseRadius - triangleOffsetY);
-      context.lineTo(center, center - triangleRadius + radius * 0.11 - triangleOffsetY);
-      context.closePath();
-      context.fill();
+      if (!suppressQuarterIndices) {
+        const triangleRadius = radius * Math.min(0.98, bandOuter + 0.01);
+        const triangleBaseRadius = radius * Math.min(0.98, bandOuter - Math.min(0.02, bandSpan * 0.18));
+        const triangleOffsetY = radius * 0.018;
+        const triangleHalfWidth = radius * 0.06 * markerWeight;
+        context.fillStyle = markerColor;
+        context.beginPath();
+        context.moveTo(center - triangleHalfWidth, center - triangleBaseRadius - triangleOffsetY);
+        context.lineTo(center + triangleHalfWidth, center - triangleBaseRadius - triangleOffsetY);
+        context.lineTo(center, center - triangleRadius + radius * 0.11 - triangleOffsetY);
+        context.closePath();
+        context.fill();
+      }
     }
 
     if (stage === 'indices' && markerStyle === 'dots') {
@@ -1380,7 +1365,7 @@ function App() {
 
         const angle = degToRad(marker * 30 - 90);
         const dotRadius = radius * (marker === 0 ? 0.05 : 0.036) * markerWeight;
-        const orbit = radius * bandInner;
+        const orbit = radius * bandMiddle;
         context.beginPath();
         context.arc(
           center + Math.cos(angle) * orbit,
@@ -1700,7 +1685,7 @@ function App() {
                     <div className="layer-card__header">
                       <div>
                         <h3>{layer.name}</h3>
-                        <p>Layer {layers.length - index} — renders {index === 0 ? 'on top' : index === layers.length - 1 ? 'at base' : 'in stack'}</p>
+                        <p>Layer {layer.creationIndex} — renders {index === 0 ? 'on top' : index === layers.length - 1 ? 'at base' : 'in stack'}</p>
                       </div>
                       <div className="layer-actions">
                         <button
@@ -1711,10 +1696,10 @@ function App() {
                         >
                           {selectedLayerId === layer.id ? 'Editing' : 'Edit'}
                         </button>
-                        <button type="button" title="Move up in stack (renders lower)" onClick={() => moveLayer(layer.id, -1)}>
+                        <button type="button" title="Move up in stack (renders higher)" onClick={() => moveLayer(layer.id, -1)}>
                           ↑ Up
                         </button>
-                        <button type="button" title="Move down in stack (renders higher)" onClick={() => moveLayer(layer.id, 1)}>
+                        <button type="button" title="Move down in stack (renders lower)" onClick={() => moveLayer(layer.id, 1)}>
                           ↓ Down
                         </button>
                         <button type="button" onClick={() => duplicateLayer(layer.id)}>
@@ -1748,8 +1733,9 @@ function App() {
 
                     <div className="control-grid compact">
                       <label>
-                        <span className="label-with-value">Opacity <output>{Math.round(layer.opacity * 100)}%</output></span>
+                        <span className="label-with-value">Opacity <output htmlFor={`opacity-${layer.id}`}>{Math.round(layer.opacity * 100)}%</output></span>
                         <input
+                          id={`opacity-${layer.id}`}
                           type="range"
                           min="0"
                           max="1"
@@ -1787,8 +1773,9 @@ function App() {
                         </select>
                       </label>
                       <label>
-                        <span className="label-with-value">Scale <output>{layer.scale.toFixed(2)}×</output></span>
+                        <span className="label-with-value">Scale <output htmlFor={`scale-${layer.id}`}>{layer.scale.toFixed(2)}×</output></span>
                         <input
+                          id={`scale-${layer.id}`}
                           type="range"
                           min="0.1"
                           max="3"
@@ -1798,8 +1785,9 @@ function App() {
                         />
                       </label>
                       <label>
-                        <span className="label-with-value">Rotation <output>{layer.rotation}°</output></span>
+                        <span className="label-with-value">Rotation <output htmlFor={`rotation-${layer.id}`}>{layer.rotation}°</output></span>
                         <input
+                          id={`rotation-${layer.id}`}
                           type="range"
                           min="-180"
                           max="180"
@@ -1809,8 +1797,9 @@ function App() {
                         />
                       </label>
                       <label>
-                        <span className="label-with-value">Offset X <output>{layer.offsetX.toFixed(1)}</output></span>
+                        <span className="label-with-value">Offset X <output htmlFor={`offset-x-${layer.id}`}>{layer.offsetX.toFixed(1)}</output></span>
                         <input
+                          id={`offset-x-${layer.id}`}
                           type="range"
                           min="-40"
                           max="40"
@@ -1820,8 +1809,9 @@ function App() {
                         />
                       </label>
                       <label>
-                        <span className="label-with-value">Offset Y <output>{layer.offsetY.toFixed(1)}</output></span>
+                        <span className="label-with-value">Offset Y <output htmlFor={`offset-y-${layer.id}`}>{layer.offsetY.toFixed(1)}</output></span>
                         <input
+                          id={`offset-y-${layer.id}`}
                           type="range"
                           min="-40"
                           max="40"
@@ -1959,8 +1949,9 @@ function App() {
                           </label>
                         )}
                       <label>
-                        <span className="label-with-value">Indices Opacity <output>{Math.round(indicesOpacity * 100)}%</output></span>
+                        <span className="label-with-value">Indices Opacity <output htmlFor="indices-opacity">{Math.round(indicesOpacity * 100)}%</output></span>
                         <input
+                          id="indices-opacity"
                           type="range"
                           min="0"
                           max="1"
@@ -1996,8 +1987,9 @@ function App() {
                         </div>
 
                         <label>
-                          <span className="label-with-value">Custom Index Rotation <output>{customMarkerRotationDeg}°</output></span>
+                          <span className="label-with-value">Custom Index Rotation <output htmlFor="custom-index-rotation">{customMarkerRotationDeg}°</output></span>
                           <input
+                            id="custom-index-rotation"
                             type="range"
                             min="-180"
                             max="180"
@@ -2026,8 +2018,9 @@ function App() {
 
                     <div className="settings-subgroup settings-subgroup--marker-band">
                       <label>
-                        <span className="label-with-value">Indices Inner Radius <output>{markerInnerRadius.toFixed(2)}</output></span>
+                        <span className="label-with-value">Indices Inner Radius <output htmlFor="indices-inner-radius">{markerInnerRadius.toFixed(2)}</output></span>
                         <input
+                          id="indices-inner-radius"
                           type="range"
                           min="0.2"
                           max="0.95"
@@ -2038,8 +2031,9 @@ function App() {
                       </label>
 
                       <label>
-                        <span className="label-with-value">Indices Outer Radius <output>{markerOuterRadius.toFixed(2)}</output></span>
+                        <span className="label-with-value">Indices Outer Radius <output htmlFor="indices-outer-radius">{markerOuterRadius.toFixed(2)}</output></span>
                         <input
+                          id="indices-outer-radius"
                           type="range"
                           min="0.25"
                           max="0.98"
@@ -2051,8 +2045,9 @@ function App() {
                       </label>
 
                       <label>
-                        <span className="label-with-value">Indices Weight <output>{markerWeight.toFixed(2)}</output></span>
+                        <span className="label-with-value">Indices Weight <output htmlFor="indices-weight">{markerWeight.toFixed(2)}</output></span>
                         <input
+                          id="indices-weight"
                           type="range"
                           min="0.5"
                           max="2"
@@ -2112,8 +2107,9 @@ function App() {
                     </label>
 
                     <label>
-                      <span className="label-with-value">Numerals Opacity <output>{Math.round(numeralsOpacity * 100)}%</output></span>
+                      <span className="label-with-value">Numerals Opacity <output htmlFor="numerals-opacity">{Math.round(numeralsOpacity * 100)}%</output></span>
                       <input
+                        id="numerals-opacity"
                         type="range"
                         min="0"
                         max="1"
@@ -2140,8 +2136,9 @@ function App() {
                     </label>
 
                     <label>
-                      <span className="label-with-value">Font Size <output>{fontSize}px</output></span>
+                      <span className="label-with-value">Font Size <output htmlFor="font-size">{fontSize}px ≈ {((fontSize / PREVIEW_SIZE) * dialDiameterMm).toFixed(1)} mm</output></span>
                       <input
+                        id="font-size"
                         type="range"
                         min="16"
                         max="384"
@@ -2152,8 +2149,9 @@ function App() {
                     </label>
 
                     <label>
-                      <span className="label-with-value">Font Weight <output>{fontWeight}</output></span>
+                      <span className="label-with-value">Font Weight <output htmlFor="font-weight">{fontWeight}</output></span>
                       <input
+                        id="font-weight"
                         type="range"
                         min="300"
                         max="900"
@@ -2164,8 +2162,9 @@ function App() {
                     </label>
 
                     <label>
-                      <span className="label-with-value">Numerals Radius <output>{numberRadius.toFixed(2)}</output></span>
+                      <span className="label-with-value">Numerals Radius <output htmlFor="numerals-radius">{numberRadius.toFixed(2)}</output></span>
                       <input
+                        id="numerals-radius"
                         type="range"
                         min="0.45"
                         max="1"
@@ -2176,8 +2175,9 @@ function App() {
                     </label>
 
                     <label>
-                      <span className="label-with-value">Numerals Offset X <output>{numeralOffsetX.toFixed(1)}</output></span>
+                      <span className="label-with-value">Numerals Offset X <output htmlFor="numerals-offset-x">{numeralOffsetX.toFixed(1)}</output></span>
                       <input
+                        id="numerals-offset-x"
                         type="range"
                         min="-25"
                         max="25"
@@ -2188,8 +2188,9 @@ function App() {
                     </label>
 
                     <label>
-                      <span className="label-with-value">Numerals Offset Y <output>{numeralOffsetY.toFixed(1)}</output></span>
+                      <span className="label-with-value">Numerals Offset Y <output htmlFor="numerals-offset-y">{numeralOffsetY.toFixed(1)}</output></span>
                       <input
+                        id="numerals-offset-y"
                         type="range"
                         min="-25"
                         max="25"
@@ -2257,8 +2258,9 @@ function App() {
                     </label>
 
                     <label>
-                      <span className="label-with-value">Edge Opacity <output>{Math.round(innerEdgeOpacity * 100)}%</output></span>
+                      <span className="label-with-value">Edge Opacity <output htmlFor="edge-opacity">{Math.round(innerEdgeOpacity * 100)}%</output></span>
                       <input
+                        id="edge-opacity"
                         type="range"
                         min="0"
                         max="1"
@@ -2270,8 +2272,9 @@ function App() {
                     </label>
 
                     <label>
-                      <span className="label-with-value">Edge Weight <output>{innerEdgeWeight.toFixed(3)}</output></span>
+                      <span className="label-with-value">Edge Weight <output htmlFor="edge-weight">{innerEdgeWeight.toFixed(3)}</output></span>
                       <input
+                        id="edge-weight"
                         type="range"
                         min="0.002"
                         max="0.08"
