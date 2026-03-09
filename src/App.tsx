@@ -447,6 +447,7 @@ function App() {
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const previewInteractionRef = useRef<PreviewInteraction | null>(null);
   const nextLayerIndex = useRef(1);
+  const [heroCollapsed, setHeroCollapsed] = useState(false);
   const [layers, setLayers] = useState<Layer[]>([]);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [previewCursor, setPreviewCursor] = useState('default');
@@ -1578,6 +1579,12 @@ function App() {
       <p role="status" aria-live="polite" className="status-message">{statusMessage}</p>
 
       <main className="workspace-grid">
+        <header className={`hero${heroCollapsed ? ' hero--collapsed' : ''}`}>
+          <h1>Watch Dial Lab</h1>
+          <p className="hero-copy">
+            Free watch dial designer — build print-ready dial artwork for NH35, NH36, NH38, and custom movements. Design indices, numerals, date windows, and image layers, then export a high-resolution PNG at any DPI.
+          </p>
+        </header>
         <div className="visual-column">
           <section className="panel preview-panel preview-workspace">
             <div className="section-heading">
@@ -1833,16 +1840,8 @@ function App() {
           </section>
         </div>
 
+        <div className="controls-column" onScroll={(e) => { if (e.currentTarget.scrollTop > 40) setHeroCollapsed(true); }}>
         <section className="panel controls-panel setup-panel">
-            <header className="hero">
-              <div className="hero-content">
-                <h1>Watch Dial Lab</h1>
-                <p className="hero-copy">
-                  Free watch dial designer — build print-ready dial artwork for NH35, NH36, NH38, and custom movements. Design indices, numerals, date windows, and image layers, then export a high-resolution PNG at any DPI.
-                </p>
-              </div>
-            </header>
-
             <div className="section-heading">
               <h2>Dial Setup</h2>
             </div>
@@ -2445,6 +2444,7 @@ function App() {
               />
             </a>
         </section>
+        </div>
       </main>
     </div>
   );
