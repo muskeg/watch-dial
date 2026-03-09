@@ -49,6 +49,8 @@ type BlendMode =
   | 'lighten'
   | 'soft-light';
 
+type LayerPlacement = 'below-overlays' | 'above-indices' | 'above-numerals';
+
 type Layer = {
   id: string;
   name: string;
@@ -60,6 +62,7 @@ type Layer = {
   offsetX: number;
   offsetY: number;
   blendMode: BlendMode;
+  placement: LayerPlacement;
 };
 
 type FontOption = {
@@ -120,6 +123,12 @@ const blendModes: BlendMode[] = [
   'darken',
   'lighten',
   'soft-light',
+];
+
+const layerPlacementOptions: { label: string; value: LayerPlacement }[] = [
+  { label: 'Base', value: 'below-overlays' },
+  { label: 'Over Indices', value: 'above-indices' },
+  { label: 'Over Numerals', value: 'above-numerals' },
 ];
 
 const markerOptions: { label: string; value: MarkerStyle }[] = [
@@ -424,15 +433,23 @@ function App() {
   const [fontSize, setFontSize] = useState(48);
   const [fontWeight, setFontWeight] = useState(700);
   const [markerColor, setMarkerColor] = useState('#f7efe0');
+  const [indicesOpacity, setIndicesOpacity] = useState(1);
   const [numeralColor, setNumeralColor] = useState('#f4d7b2');
+  const [numeralsOpacity, setNumeralsOpacity] = useState(1);
   const [backgroundColor, setBackgroundColor] = useState('#153040');
   const [transparentBackground, setTransparentBackground] = useState(false);
+  const [innerEdgeEnabled, setInnerEdgeEnabled] = useState(false);
+  const [innerEdgeColor, setInnerEdgeColor] = useState('#f7efe0');
+  const [innerEdgeOpacity, setInnerEdgeOpacity] = useState(0.4);
+  const [innerEdgeWeight, setInnerEdgeWeight] = useState(0.012);
   const [dialDiameterMm, setDialDiameterMm] = useState(38);
   const [exportDpi, setExportDpi] = useState(600);
   const [markerInnerRadius, setMarkerInnerRadius] = useState(0.76);
   const [markerOuterRadius, setMarkerOuterRadius] = useState(0.93);
   const [markerWeight, setMarkerWeight] = useState(1);
   const [numberRadius, setNumberRadius] = useState(0.73);
+  const [numeralOffsetX, setNumeralOffsetX] = useState(0);
+  const [numeralOffsetY, setNumeralOffsetY] = useState(0);
   const [hideQuarterIndices, setHideQuarterIndices] = useState(false);
   const [displayPresetId, setDisplayPresetId] = useState('custom');
   const [savedDisplayPresets, setSavedDisplayPresets] = useState<DisplayPreset[]>(() => readSavedDisplayPresets());
@@ -562,6 +579,11 @@ function App() {
     fontSize,
     fontWeight,
     gridVisible,
+    indicesOpacity,
+    innerEdgeColor,
+    innerEdgeEnabled,
+    innerEdgeWeight,
+    innerEdgeOpacity,
     layers,
     markerColor,
     markerInnerRadius,
@@ -572,6 +594,9 @@ function App() {
     customMarkerRotationDeg,
     hideQuarterIndices,
     numeralColor,
+    numeralOffsetX,
+    numeralOffsetY,
+    numeralsOpacity,
     numberRadius,
     cutouts,
     markerStyle,
@@ -603,6 +628,7 @@ function App() {
           offsetX: 0,
           offsetY: 0,
           blendMode: 'source-over' as BlendMode,
+          placement: 'below-overlays' as LayerPlacement,
         })),
         ...current,
       ]);
@@ -696,6 +722,35 @@ function App() {
 
   function removeLayer(id: string) {
     setLayers((current) => current.filter((layer) => layer.id !== id));
+  }
+
+  function duplicateLayer(id: string) {
+    let duplicateId: string | null = null;
+
+    setLayers((current) => {
+      const index = current.findIndex((layer) => layer.id === id);
+
+      if (index < 0) {
+        return current;
+      }
+
+      const source = current[index];
+      const duplicate: Layer = {
+        ...source,
+        id: createId('layer'),
+        name: `${source.name} Copy`,
+      };
+      duplicateId = duplicate.id;
+      const next = [...current];
+      next.splice(index, 0, duplicate);
+      return next;
+    });
+
+    if (duplicateId) {
+      setSelectedLayerId(duplicateId);
+    }
+
+    setStatusMessage('Layer duplicated.');
   }
 
   function drawSelectedLayerOverlay(context: CanvasRenderingContext2D, size: number) {
@@ -1043,17 +1098,40 @@ function App() {
       context.fillRect(0, 0, size, size);
     }
 
+    drawLayers(context, size, ['below-overlays']);
+
+    if (innerEdgeEnabled) {
+      drawInnerEdge(context, center, radius);
+    }
+
+    if (showGuides) {
+      drawGuides(context, center, radius);
+    }
+
+    drawOverlay(context, center, radius, fontScale, 'indices');
+    drawLayers(context, size, ['above-indices']);
+    drawOverlay(context, center, radius, fontScale, 'numerals');
+    drawLayers(context, size, ['above-numerals']);
+    applyCutouts(context, center, pixelsPerMm);
+    context.restore();
+
+    if (showGuides) {
+      drawCutoutGuides(context, center, pixelsPerMm);
+    }
+  }
+
+  function drawLayers(context: CanvasRenderingContext2D, size: number, placements: LayerPlacement[]) {
     for (let index = layers.length - 1; index >= 0; index -= 1) {
       const layer = layers[index];
 
-      if (!layer.visible) {
+      if (!layer.visible || !placements.includes(layer.placement ?? 'below-overlays')) {
         continue;
       }
 
       context.save();
       context.globalAlpha = layer.opacity;
       context.globalCompositeOperation = layer.blendMode;
-      context.translate(center + (layer.offsetX / 100) * size, center + (layer.offsetY / 100) * size);
+      context.translate(size / 2 + (layer.offsetX / 100) * size, size / 2 + (layer.offsetY / 100) * size);
       context.rotate(degToRad(layer.rotation));
       const baseScale = size / Math.max(layer.image.width, layer.image.height);
       const outputWidth = layer.image.width * baseScale * layer.scale;
@@ -1061,18 +1139,24 @@ function App() {
       context.drawImage(layer.image, -outputWidth / 2, -outputHeight / 2, outputWidth, outputHeight);
       context.restore();
     }
+  }
 
-    if (showGuides) {
-      drawGuides(context, center, radius);
+  function drawInnerEdge(context: CanvasRenderingContext2D, center: number, radius: number) {
+    const lineWidth = Math.max(1.5, radius * clamp(innerEdgeWeight, 0.002, 0.08));
+    const edgeRadius = radius - lineWidth / 2;
+
+    if (edgeRadius <= 0) {
+      return;
     }
 
-    drawOverlay(context, center, radius, fontScale);
-    applyCutouts(context, center, pixelsPerMm);
+    context.save();
+    context.globalAlpha = innerEdgeOpacity;
+    context.strokeStyle = innerEdgeColor;
+    context.lineWidth = lineWidth;
+    context.beginPath();
+    context.arc(center, center, edgeRadius, 0, Math.PI * 2);
+    context.stroke();
     context.restore();
-
-    if (showGuides) {
-      drawCutoutGuides(context, center, pixelsPerMm);
-    }
   }
 
   function applyCutouts(context: CanvasRenderingContext2D, center: number, pixelsPerMm: number) {
@@ -1195,6 +1279,7 @@ function App() {
     center: number,
     radius: number,
     fontScale: number,
+    stage: 'indices' | 'numerals',
   ) {
     context.save();
     context.strokeStyle = markerColor;
@@ -1207,7 +1292,8 @@ function App() {
     const bandSpan = Math.max(0.01, bandOuter - bandInner);
     const suppressQuarterIndices = hideQuarterIndices && numeralStyle !== 'none' && numeralLayout === 'quarters';
 
-    if (markerStyle === 'baton') {
+    if (stage === 'indices' && markerStyle === 'baton') {
+      context.globalAlpha = indicesOpacity;
       for (let marker = 0; marker < 12; marker += 1) {
         if (suppressQuarterIndices && quarterIndexPositions.has(marker)) {
           continue;
@@ -1224,7 +1310,8 @@ function App() {
       }
     }
 
-    if (markerStyle === 'diver') {
+    if (stage === 'indices' && markerStyle === 'diver') {
+      context.globalAlpha = indicesOpacity;
       for (let marker = 0; marker < 60; marker += 1) {
         if (marker === 0) {
           continue;
@@ -1259,7 +1346,8 @@ function App() {
       context.fill();
     }
 
-    if (markerStyle === 'dots') {
+    if (stage === 'indices' && markerStyle === 'dots') {
+      context.globalAlpha = indicesOpacity;
       context.fillStyle = markerColor;
 
       for (let marker = 0; marker < 12; marker += 1) {
@@ -1282,7 +1370,8 @@ function App() {
       }
     }
 
-    if (markerStyle === 'dagger') {
+    if (stage === 'indices' && markerStyle === 'dagger') {
+      context.globalAlpha = indicesOpacity;
       context.fillStyle = markerColor;
 
       for (let marker = 0; marker < 12; marker += 1) {
@@ -1335,7 +1424,8 @@ function App() {
       }
     }
 
-    if (markerStyle === 'custom' && customMarkerImage) {
+    if (stage === 'indices' && markerStyle === 'custom' && customMarkerImage) {
+      context.globalAlpha = indicesOpacity;
       const imageAspect = customMarkerImage.width / Math.max(1, customMarkerImage.height);
       const imageHeight = Math.max(radius * 0.05, radius * bandSpan * 1.15) * markerWeight;
       const imageWidth = imageHeight * imageAspect;
@@ -1360,48 +1450,54 @@ function App() {
       }
     }
 
-    if (numeralStyle === 'arabic' && numeralLayout === 'quarters') {
+    if (stage === 'numerals' && numeralStyle === 'arabic' && numeralLayout === 'quarters') {
+      context.globalAlpha = numeralsOpacity;
       drawQuarterNumerals(context, center, radius, fontScale, ['12', '3', '6', '9']);
     }
 
-    if (numeralStyle === 'roman' && numeralLayout === 'quarters') {
+    if (stage === 'numerals' && numeralStyle === 'roman' && numeralLayout === 'quarters') {
+      context.globalAlpha = numeralsOpacity;
       drawQuarterNumerals(context, center, radius, fontScale, ['XII', 'III', 'VI', 'IX']);
     }
 
-    if (numeralStyle === 'arabic' && numeralLayout === 'full') {
+    if (stage === 'numerals' && numeralStyle === 'arabic' && numeralLayout === 'full') {
+      context.globalAlpha = numeralsOpacity;
       context.fillStyle = numeralColor;
       context.font = `${fontWeight} ${fontSize * fontScale}px ${quoteFontFamily(selectedFont)}`;
       context.textAlign = 'center';
       context.textBaseline = 'middle';
+      const offsetX = (numeralOffsetX / 100) * radius * 2;
+      const offsetY = (numeralOffsetY / 100) * radius * 2;
 
       for (let marker = 0; marker < 12; marker += 1) {
         const angle = degToRad(marker * 30 - 90);
         const label = marker === 0 ? '12' : `${marker}`;
-        const numeralRadius = radius * numberRadius;
+        const numeralRadius = radius * clamp(numberRadius, 0.45, 1);
         context.fillText(
           label,
-          center + Math.cos(angle) * numeralRadius,
-          center + Math.sin(angle) * numeralRadius,
+          center + Math.cos(angle) * numeralRadius + offsetX,
+          center + Math.sin(angle) * numeralRadius + offsetY,
         );
       }
 
-      context.restore();
-      return;
     }
 
-    if (numeralStyle === 'roman' && numeralLayout === 'full') {
+    if (stage === 'numerals' && numeralStyle === 'roman' && numeralLayout === 'full') {
+      context.globalAlpha = numeralsOpacity;
       context.fillStyle = numeralColor;
       context.font = `${fontWeight} ${fontSize * fontScale}px ${quoteFontFamily(selectedFont)}`;
       context.textAlign = 'center';
       context.textBaseline = 'middle';
+      const offsetX = (numeralOffsetX / 100) * radius * 2;
+      const offsetY = (numeralOffsetY / 100) * radius * 2;
 
       for (let marker = 0; marker < 12; marker += 1) {
         const angle = degToRad(marker * 30 - 90);
-        const numeralRadius = radius * numberRadius;
+        const numeralRadius = radius * clamp(numberRadius, 0.45, 1);
         context.fillText(
           fullRomanLabels[marker],
-          center + Math.cos(angle) * numeralRadius,
-          center + Math.sin(angle) * numeralRadius,
+          center + Math.cos(angle) * numeralRadius + offsetX,
+          center + Math.sin(angle) * numeralRadius + offsetY,
         );
       }
     }
@@ -1420,14 +1516,16 @@ function App() {
     context.font = `${fontWeight} ${fontSize * fontScale}px ${quoteFontFamily(selectedFont)}`;
     context.textAlign = 'center';
     context.textBaseline = 'middle';
+    const offsetX = (numeralOffsetX / 100) * radius * 2;
+    const offsetY = (numeralOffsetY / 100) * radius * 2;
 
     for (let index = 0; index < labels.length; index += 1) {
       const angle = degToRad(index * 90 - 90);
-      const numeralRadius = radius * numberRadius;
+      const numeralRadius = radius * clamp(numberRadius, 0.45, 1);
       context.fillText(
         labels[index],
-        center + Math.cos(angle) * numeralRadius,
-        center + Math.sin(angle) * numeralRadius,
+        center + Math.cos(angle) * numeralRadius + offsetX,
+        center + Math.sin(angle) * numeralRadius + offsetY,
       );
     }
   }
@@ -1487,7 +1585,7 @@ function App() {
             <div className="section-heading">
               <h2>Preview</h2>
               <button type="button" className="export-button" onClick={exportPng}>
-                Download PNG
+                Download
               </button>
             </div>
 
@@ -1501,14 +1599,6 @@ function App() {
                 onPointerUp={handlePreviewPointerUp}
                 onPointerCancel={handlePreviewPointerUp}
               />
-            </div>
-
-            <div className="status-bar">
-              <p>{statusMessage}</p>
-              <small>
-                PNG export matches the selected physical diameter and DPI in pixel count. Some viewers may
-                ignore DPI metadata, but the output resolution is correct.
-              </small>
             </div>
           </section>
 
@@ -1548,6 +1638,9 @@ function App() {
                         <button type="button" onClick={() => moveLayer(layer.id, 1)}>
                           Down
                         </button>
+                        <button type="button" onClick={() => duplicateLayer(layer.id)}>
+                          Duplicate
+                        </button>
                         <button type="button" className="danger" onClick={() => removeLayer(layer.id)}>
                           Remove
                         </button>
@@ -1574,6 +1667,19 @@ function App() {
                           value={layer.opacity}
                           onChange={(event) => updateLayer(layer.id, { opacity: Number(event.target.value) })}
                         />
+                      </label>
+                      <label>
+                        Placement
+                        <select
+                          value={layer.placement}
+                          onChange={(event) => updateLayer(layer.id, { placement: event.target.value as LayerPlacement })}
+                        >
+                          {layerPlacementOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
                       </label>
                       <label>
                         Blend
@@ -1734,13 +1840,21 @@ function App() {
                       </div>
 
                       <div className="settings-subgroup settings-subgroup--marker-color">
+                        {markerStyle === 'custom' ? null : (
+                          <label>
+                            Indices Color
+                            <input type="color" value={markerColor} onChange={(event) => setMarkerColor(event.target.value)} />
+                          </label>
+                        )}
                       <label>
-                          Indices Color
+                        Indices Opacity
                         <input
-                          type="color"
-                          value={markerColor}
-                          onChange={(event) => setMarkerColor(event.target.value)}
-                          disabled={markerStyle === 'custom'}
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.01"
+                          value={indicesOpacity}
+                          onChange={(event) => setIndicesOpacity(Number(event.target.value))}
                         />
                       </label>
                     </div>
@@ -1883,6 +1997,18 @@ function App() {
                     </label>
 
                     <label>
+                      Numerals Opacity
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.01"
+                        value={numeralsOpacity}
+                        onChange={(event) => setNumeralsOpacity(Number(event.target.value))}
+                      />
+                    </label>
+
+                    <label>
                       Numerals Font
                       <select value={selectedFont} onChange={(event) => setSelectedFont(event.target.value)}>
                         {fontOptions.map((font) => (
@@ -1903,7 +2029,7 @@ function App() {
                       <input
                         type="range"
                         min="16"
-                        max="96"
+                        max="384"
                         step="1"
                         value={fontSize}
                         onChange={(event) => setFontSize(Number(event.target.value))}
@@ -1927,10 +2053,34 @@ function App() {
                       <input
                         type="range"
                         min="0.45"
-                        max="0.86"
+                        max="1"
                         step="0.01"
                         value={numberRadius}
                         onChange={(event) => setNumberRadius(Number(event.target.value))}
+                      />
+                    </label>
+
+                    <label>
+                      Numerals Offset X
+                      <input
+                        type="range"
+                        min="-25"
+                        max="25"
+                        step="0.1"
+                        value={numeralOffsetX}
+                        onChange={(event) => setNumeralOffsetX(Number(event.target.value))}
+                      />
+                    </label>
+
+                    <label>
+                      Numerals Offset Y
+                      <input
+                        type="range"
+                        min="-25"
+                        max="25"
+                        step="0.1"
+                        value={numeralOffsetY}
+                        onChange={(event) => setNumeralOffsetY(Number(event.target.value))}
                       />
                     </label>
 
@@ -1965,6 +2115,59 @@ function App() {
                   />
                   Transparent Background
                 </label>
+
+                <section className="settings-group">
+                  <div className="settings-group__heading">
+                    <h3>Edge</h3>
+                  </div>
+
+                  <div className="control-grid compact control-grid--settings-group">
+                    <label className="checkbox-row boxed">
+                      <input
+                        type="checkbox"
+                        checked={innerEdgeEnabled}
+                        onChange={(event) => setInnerEdgeEnabled(event.target.checked)}
+                      />
+                      Show edge
+                    </label>
+
+                    <label>
+                      Edge Color
+                      <input
+                        type="color"
+                        value={innerEdgeColor}
+                        onChange={(event) => setInnerEdgeColor(event.target.value)}
+                        disabled={!innerEdgeEnabled}
+                      />
+                    </label>
+
+                    <label>
+                      Edge Opacity
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.01"
+                        value={innerEdgeOpacity}
+                        onChange={(event) => setInnerEdgeOpacity(Number(event.target.value))}
+                        disabled={!innerEdgeEnabled}
+                      />
+                    </label>
+
+                    <label>
+                      Edge Weight
+                      <input
+                        type="range"
+                        min="0.002"
+                        max="0.08"
+                        step="0.002"
+                        value={innerEdgeWeight}
+                        onChange={(event) => setInnerEdgeWeight(Number(event.target.value))}
+                        disabled={!innerEdgeEnabled}
+                      />
+                    </label>
+                  </div>
+                </section>
 
                 <label>
                   Dial Diameter (mm)
@@ -2143,6 +2346,17 @@ function App() {
             </div>
         </section>
       </main>
+
+      <footer className="app-footer">
+        <a className="coffee-link" href="https://www.buymeacoffee.com/muskegg" target="_blank" rel="noreferrer">
+          <img
+            src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png"
+            alt="Buy Me A Coffee"
+            width="217"
+            height="60"
+          />
+        </a>
+      </footer>
     </div>
   );
 }

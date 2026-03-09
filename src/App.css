@@ -264,18 +264,33 @@
   touch-action: none;
 }
 
-.status-bar {
-  border-radius: 1.2rem;
-  background: rgba(247, 239, 224, 0.05);
-  padding: 1rem;
+.app-footer {
+  display: flex;
+  justify-content: center;
+  margin: 1.5rem auto 0;
+  max-width: 1600px;
+  padding: 0.25rem 0 0;
 }
 
-.status-bar p {
-  margin: 0 0 0.4rem;
+.coffee-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  transition: transform 140ms ease, opacity 140ms ease;
 }
 
-.status-bar small {
-  color: var(--muted);
+.coffee-link:hover {
+  transform: translateY(-1px);
+  opacity: 0.96;
+}
+
+.coffee-link img {
+  display: block;
+  width: 217px;
+  max-width: 100%;
+  height: auto;
+  border: 0;
 }
 
 .preset-note {
@@ -347,7 +362,7 @@
 }
 
 .settings-subgroup--marker-color {
-  grid-template-columns: minmax(140px, 220px);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
 .settings-subgroup--marker-band {
@@ -685,6 +700,14 @@ input[type='range'] {
   .upload-button,
   .export-button {
     width: 100%;
+  }
+
+  .app-footer {
+    margin-top: 1rem;
+  }
+
+  .coffee-link {
+    width: min(100%, 217px);
   }
 
   .segmented-control,
