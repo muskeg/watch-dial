@@ -1838,7 +1838,7 @@ function App() {
               <div className="hero-content">
                 <h1>Watch Dial Lab</h1>
                 <p className="hero-copy">
-                  From first sketch to print-ready artwork, shape the balance, typography, and cutouts of your dial.
+                  Free watch dial designer — build print-ready dial artwork for NH35, NH36, NH38, and custom movements. Design indices, numerals, date windows, and image layers, then export a high-resolution PNG at any DPI.
                 </p>
               </div>
             </header>
