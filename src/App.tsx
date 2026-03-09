@@ -1539,18 +1539,14 @@ function App() {
   }
 
   function exportPng() {
-    const safeDpi = clamp(exportDpi, 72, 2400);
-    const diameterPixels = Math.max(1, Math.round((dialDiameterMm / 25.4) * safeDpi));
-    const squarePixels = diameterPixels;
-
-    if (squarePixels > 9000) {
-      setStatusMessage('Export is too large for a browser canvas. Reduce the dial diameter or DPI.');
+    if (dialPixelDiameter > 16_000) {
+      setStatusMessage('Export canvas would exceed 16 000 px. Reduce the dial diameter or DPI.');
       return;
     }
 
     const canvas = document.createElement('canvas');
-    canvas.width = squarePixels;
-    canvas.height = squarePixels;
+    canvas.width = dialPixelDiameter;
+    canvas.height = dialPixelDiameter;
     const context = canvas.getContext('2d');
 
     if (!context) {
@@ -1558,7 +1554,7 @@ function App() {
       return;
     }
 
-    drawDial(context, squarePixels, false);
+    drawDial(context, dialPixelDiameter, false);
     canvas.toBlob((blob) => {
       if (!blob) {
         setStatusMessage('Unable to encode the PNG.');
@@ -1569,10 +1565,10 @@ function App() {
       const link = document.createElement('a');
       const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
       link.href = exportUrl;
-      link.download = `watch-dial-${stamp}-${diameterPixels}px.png`;
+      link.download = `watch-dial-${stamp}-${dialPixelDiameter}px.png`;
       link.click();
       URL.revokeObjectURL(exportUrl);
-      setStatusMessage(`PNG exported at ${diameterPixels}px dial diameter (${safeDpi} DPI target).`);
+      setStatusMessage(`PNG exported at ${dialPixelDiameter}px dial diameter (${exportDpi} DPI).`);
     }, 'image/png');
   }
 
@@ -1627,8 +1623,13 @@ function App() {
                     min="10"
                     max="80"
                     step="0.01"
-                    value={dialDiameterMm}
-                    onChange={(event) => setDialDiameterMm(Number(event.target.value))}
+                    defaultValue={dialDiameterMm}
+                    key={dialDiameterMm}
+                    onBlur={(event) => {
+                      const clamped = clamp(Number(event.target.value), 10, 80);
+                      event.target.value = String(clamped);
+                      setDialDiameterMm(clamped);
+                    }}
                   />
                 </label>
                 <label>
@@ -1636,17 +1637,21 @@ function App() {
                   <input
                     type="number"
                     min="72"
-                    max="2400"
                     step="10"
-                    value={exportDpi}
-                    onChange={(event) => setExportDpi(Number(event.target.value))}
+                    defaultValue={exportDpi}
+                    key={exportDpi}
+                    onBlur={(event) => {
+                      const clamped = Math.max(72, Number(event.target.value) || 72);
+                      event.target.value = String(clamped);
+                      setExportDpi(clamped);
+                    }}
                   />
                 </label>
               </div>
               <div className="spec-list">
                 <div>
                   <span>Output size</span>
-                  <strong>{dialPixelDiameter}px</strong>
+                  <strong>{dialPixelDiameter} × {dialPixelDiameter} px</strong>
                 </div>
                 <div>
                   <span>Megapixels</span>
