@@ -217,7 +217,9 @@
 }
 
 .preview-figure {
-  display: contents;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .preview-caption {
