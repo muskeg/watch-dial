@@ -1,78 +1,37 @@
 .app-shell {
-  --header-offset: 0px;
   --visual-column-min: 460px;
   --visual-column-max: 660px;
-  min-height: 100vh;
-  padding: 0 2rem 2rem;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 0 2rem;
 }
 
 .hero {
-  margin: 0 auto 1.5rem;
-  max-width: 1600px;
-  overflow: clip;
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  padding: 0.9rem 0 1rem;
-  background: transparent;
-  backdrop-filter: blur(0px);
-  border-bottom: 1px solid transparent;
-  transition:
-    padding 260ms cubic-bezier(0.22, 1, 0.36, 1),
-    background-color 260ms cubic-bezier(0.22, 1, 0.36, 1),
-    backdrop-filter 260ms cubic-bezier(0.22, 1, 0.36, 1),
-    border-color 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  padding: 1.5rem 0 1.25rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.25rem;
+  flex-shrink: 0;
 }
 
 .hero-content {
-  max-width: min(100%, var(--visual-column-max));
+  /* full width inside the setup column */
 }
 
 .hero h1 {
   margin: 0;
   font-family: 'Fraunces', serif;
-  font-size: clamp(3rem, 8vw, 5.5rem);
+  font-size: clamp(2.2rem, 3.5vw, 3.5rem);
   font-weight: 700;
   line-height: 0.95;
-  transition:
-    font-size 260ms cubic-bezier(0.22, 1, 0.36, 1),
-    line-height 260ms cubic-bezier(0.22, 1, 0.36, 1),
-    letter-spacing 260ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .hero-copy {
   max-width: 100%;
   color: var(--muted);
-  font-size: 1.05rem;
-  margin: 1rem 0 0;
-  max-height: 6rem;
-  opacity: 1;
-  overflow: hidden;
-  transform: translateY(0);
-  transition:
-    max-height 240ms cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 180ms ease,
-    margin 240ms cubic-bezier(0.22, 1, 0.36, 1),
-    transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.hero--compact {
-  padding: 0.55rem 0 0.65rem;
-  background: rgba(8, 18, 24, 0.72);
-  backdrop-filter: blur(18px);
-  border-color: rgba(247, 239, 224, 0.12);
-}
-
-.hero--compact h1 {
-  font-size: clamp(2rem, 4vw, 2.8rem);
-  line-height: 1;
-}
-
-.hero--compact .hero-copy {
-  margin-top: 0;
-  max-height: 0;
-  opacity: 0;
-  transform: translateY(-0.4rem);
+  font-size: 0.95rem;
+  margin: 0.6rem 0 0;
 }
 
 .spec-list div {
@@ -99,11 +58,14 @@
 .workspace-grid {
   display: grid;
   grid-template-columns: minmax(var(--visual-column-min), var(--visual-column-max)) minmax(360px, 1fr);
-  align-items: start;
   gap: 1.5rem;
+  flex: 1;
+  min-height: 0;
   margin: 0 auto;
   max-width: 1600px;
   width: 100%;
+  padding: 1rem 0 1rem;
+  overflow: hidden;
 }
 
 .panel {
@@ -135,11 +97,10 @@
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 1.5rem;
-  position: sticky;
-  top: calc(var(--header-offset) + 0.5rem);
-  height: calc(100vh - var(--header-offset) - 1.5rem);
+  min-height: 0;
   min-width: 0;
   width: 100%;
+  overflow: hidden;
 }
 
 .preview-workspace {
@@ -156,6 +117,10 @@
 .setup-panel {
   grid-column: 2;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  /* Scrollbar sits inside the panel's border-radius */
+  border-radius: 1.5rem;
 }
 
 .setup-scroll {
@@ -251,6 +216,40 @@
   padding: clamp(1rem, 2vw, 1.5rem);
 }
 
+.preview-figure {
+  display: contents;
+}
+
+.preview-caption {
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-align: center;
+  margin: 0.5rem 0 0;
+  min-height: 1.2em;
+}
+
+.preview-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.preview-header-actions .checkbox-row {
+  gap: 0.45rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.export-group {
+  display: grid;
+  gap: 0.9rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.9rem;
+  margin-top: 0.25rem;
+}
+
 .preview-workspace .preview-frame {
   max-width: min(82vh, 100%);
   margin: 0 auto;
@@ -264,20 +263,25 @@
   touch-action: none;
 }
 
-.app-footer {
+.coffee-link {
   display: flex;
   justify-content: center;
-  margin: 1.5rem auto 0;
-  max-width: 1600px;
-  padding: 0.25rem 0 0;
-}
-
-.coffee-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  margin: 1rem auto 0;
   text-decoration: none;
   transition: transform 140ms ease, opacity 140ms ease;
+}
+
+/* Status message — visually hidden but available to screen readers */
+.status-message {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .coffee-link:hover {
@@ -306,14 +310,15 @@
 }
 
 .preset-actions {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
   grid-column: 1 / -1;
-  grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr));
   gap: 0.9rem;
   align-items: end;
 }
 
 .preset-actions label {
+  flex: 1 1 180px;
   display: grid;
   gap: 0.45rem;
 }
@@ -401,6 +406,13 @@
   overflow-x: hidden;
   overflow-y: auto;
   padding-right: 0.25rem;
+  border-radius: 1rem;
+  transition: box-shadow 120ms ease, background 120ms ease;
+}
+
+.layer-stack--drag-over {
+  box-shadow: 0 0 0 2px var(--accent), inset 0 0 0 1px rgba(244, 162, 97, 0.2);
+  background: rgba(244, 162, 97, 0.05);
 }
 
 .empty-state {
@@ -482,6 +494,40 @@
 
 .setup-panel .cutout-card .control-grid.compact {
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+/* Range label + output value on one line */
+.label-with-value {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.label-with-value output {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  min-width: 3.5ch;
+  text-align: right;
+}
+
+/* Confirm-remove inline confirmation button */
+.confirm-danger {
+  animation: pulse-danger 240ms ease;
+}
+
+@keyframes pulse-danger {
+  0% { transform: scale(0.96); }
+  60% { transform: scale(1.04); }
+  100% { transform: scale(1); }
+}
+
+.confirm-remove-row {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
 }
 
 .control-grid label,
@@ -635,15 +681,22 @@ input[type='range'] {
   .app-shell {
     --visual-column-min: 100%;
     --visual-column-max: 100%;
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+    padding: 0 2rem 2rem;
   }
 
   .workspace-grid {
     grid-template-columns: 1fr;
+    flex: none;
+    overflow: visible;
+    padding: 0;
   }
 
   .visual-column {
     grid-column: 1;
-    position: static;
+    overflow: visible;
     height: auto;
   }
 
@@ -661,6 +714,8 @@ input[type='range'] {
 
   .setup-panel {
     grid-column: 1;
+    overflow-y: visible;
+    height: auto;
   }
 
   .setup-panel > .control-grid {
@@ -668,7 +723,7 @@ input[type='range'] {
   }
 
   .preset-actions {
-    grid-template-columns: 1fr;
+    flex-direction: column;
   }
 
   .color-row {
@@ -678,6 +733,10 @@ input[type='range'] {
   .cutout-card__header {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .export-group .control-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -702,8 +761,10 @@ input[type='range'] {
     width: 100%;
   }
 
-  .app-footer {
-    margin-top: 1rem;
+  .preview-header-actions {
+    flex-direction: row;
+    justify-content: space-between;
+    width: 100%;
   }
 
   .coffee-link {

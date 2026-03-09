@@ -1,4 +1,4 @@
-import { ChangeEvent, CSSProperties, PointerEvent as ReactPointerEvent, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { ChangeEvent, DragEvent, PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 import './App.css';
 
 type MarkerStyle = 'none' | 'baton' | 'diver' | 'dots' | 'dagger' | 'custom';
@@ -125,6 +125,16 @@ const blendModes: BlendMode[] = [
   'soft-light',
 ];
 
+const blendModeLabels: Record<BlendMode, string> = {
+  'source-over': 'Normal',
+  'multiply': 'Multiply',
+  'screen': 'Screen',
+  'overlay': 'Overlay',
+  'darken': 'Darken',
+  'lighten': 'Lighten',
+  'soft-light': 'Soft Light',
+};
+
 const layerPlacementOptions: { label: string; value: LayerPlacement }[] = [
   { label: 'Base', value: 'below-overlays' },
   { label: 'Over Indices', value: 'above-indices' },
@@ -151,6 +161,9 @@ const PREVIEW_SIZE = 760;
 const PREVIEW_SCALE_HANDLE_RADIUS = 14;
 const PREVIEW_ROTATE_HANDLE_RADIUS = 14;
 const PREVIEW_ROTATE_HANDLE_OFFSET = 36;
+// Larger hit areas for touch accessibility (visual handles stay at the radii above)
+const PREVIEW_SCALE_HIT_RADIUS = 22;
+const PREVIEW_ROTATE_HIT_RADIUS = 22;
 
 const numeralStyleOptions: { label: string; value: NumeralStyle }[] = [
   { label: 'None', value: 'none' },
@@ -414,10 +427,7 @@ function isPointInLayer(point: { x: number; y: number }, metrics: LayerRenderMet
 
 function App() {
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const heroRef = useRef<HTMLElement | null>(null);
   const previewInteractionRef = useRef<PreviewInteraction | null>(null);
-  const [headerOffsetPx, setHeaderOffsetPx] = useState(0);
-  const [isHeroCompact, setIsHeroCompact] = useState(false);
   const [layers, setLayers] = useState<Layer[]>([]);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [previewCursor, setPreviewCursor] = useState('default');
@@ -457,6 +467,9 @@ function App() {
   const [cutouts, setCutouts] = useState<Cutout[]>([]);
   const [gridVisible, setGridVisible] = useState(true);
   const [statusMessage, setStatusMessage] = useState('Add layers, tune the index style, then export a high-resolution PNG.');
+  const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
+  const [pendingRemoveKind, setPendingRemoveKind] = useState<'layer' | 'cutout' | 'preset' | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   const dialPixelDiameter = Math.max(1, Math.round((dialDiameterMm / 25.4) * exportDpi));
   const squarePixelSize = dialPixelDiameter;
@@ -469,56 +482,6 @@ function App() {
       setSelectedLayerId(null);
     }
   }, [layers, selectedLayerId]);
-
-  useLayoutEffect(() => {
-    const hero = heroRef.current;
-
-    if (!hero) {
-      return;
-    }
-
-    const updateHeaderOffset = () => {
-      const styles = window.getComputedStyle(hero);
-      const marginBottom = Number.parseFloat(styles.marginBottom) || 0;
-      setHeaderOffsetPx(Math.ceil(hero.getBoundingClientRect().height + marginBottom));
-    };
-
-    updateHeaderOffset();
-
-    const resizeObserver = new ResizeObserver(() => {
-      updateHeaderOffset();
-    });
-
-    resizeObserver.observe(hero);
-    window.addEventListener('resize', updateHeaderOffset);
-
-    return () => {
-      resizeObserver.disconnect();
-      window.removeEventListener('resize', updateHeaderOffset);
-    };
-  }, []);
-
-  useEffect(() => {
-    const collapseThreshold = 140;
-    const expandThreshold = 24;
-
-    const updateHeroState = () => {
-      setIsHeroCompact((current) => {
-        if (current) {
-          return window.scrollY > expandThreshold;
-        }
-
-        return window.scrollY > collapseThreshold;
-      });
-    };
-
-    updateHeroState();
-    window.addEventListener('scroll', updateHeroState, { passive: true });
-
-    return () => {
-      window.removeEventListener('scroll', updateHeroState);
-    };
-  }, []);
 
   useEffect(() => {
     window.localStorage.setItem(DISPLAY_PRESETS_STORAGE_KEY, JSON.stringify(savedDisplayPresets));
@@ -826,12 +789,12 @@ function App() {
     if (selectedLayer) {
       const { metrics, scaleHandle, rotateHandle } = getSelectedLayerHandles(selectedLayer);
 
-      if (getDistance(point, scaleHandle) <= PREVIEW_SCALE_HANDLE_RADIUS + 4) {
+      if (getDistance(point, scaleHandle) <= PREVIEW_SCALE_HIT_RADIUS) {
         setPreviewCursor('nwse-resize');
         return;
       }
 
-      if (getDistance(point, rotateHandle) <= PREVIEW_ROTATE_HANDLE_RADIUS + 4) {
+      if (getDistance(point, rotateHandle) <= PREVIEW_ROTATE_HIT_RADIUS) {
         setPreviewCursor('crosshair');
         return;
       }
@@ -863,7 +826,7 @@ function App() {
     if (selectedLayer) {
       const { metrics, scaleHandle, rotateHandle } = getSelectedLayerHandles(selectedLayer);
 
-      if (getDistance(point, scaleHandle) <= PREVIEW_SCALE_HANDLE_RADIUS + 4) {
+      if (getDistance(point, scaleHandle) <= PREVIEW_SCALE_HIT_RADIUS) {
         previewInteractionRef.current = {
           mode: 'scale',
           layerId: selectedLayer.id,
@@ -875,7 +838,7 @@ function App() {
         return;
       }
 
-      if (getDistance(point, rotateHandle) <= PREVIEW_ROTATE_HANDLE_RADIUS + 4) {
+      if (getDistance(point, rotateHandle) <= PREVIEW_ROTATE_HIT_RADIUS) {
         previewInteractionRef.current = {
           mode: 'rotate',
           layerId: selectedLayer.id,
@@ -1078,6 +1041,66 @@ function App() {
     setDisplayPresetId('custom');
     setCutouts([]);
     setStatusMessage(`${presetToDelete?.label ?? 'Preset'} deleted.`);
+  }
+
+  function requestRemove(id: string, kind: 'layer' | 'cutout' | 'preset') {
+    setPendingRemoveId(id);
+    setPendingRemoveKind(kind);
+  }
+
+  function confirmRemove() {
+    if (!pendingRemoveId || !pendingRemoveKind) return;
+    if (pendingRemoveKind === 'layer') removeLayer(pendingRemoveId);
+    if (pendingRemoveKind === 'cutout') removeCutout(pendingRemoveId);
+    if (pendingRemoveKind === 'preset') deleteSavedDisplayPreset();
+    setPendingRemoveId(null);
+    setPendingRemoveKind(null);
+  }
+
+  function cancelRemove() {
+    setPendingRemoveId(null);
+    setPendingRemoveKind(null);
+  }
+
+  function handleLayerDragOver(event: DragEvent<HTMLDivElement>) {
+    if (event.dataTransfer.types.includes('Files')) {
+      event.preventDefault();
+      setIsDragOver(true);
+    }
+  }
+
+  function handleLayerDragLeave() {
+    setIsDragOver(false);
+  }
+
+  async function handleLayerDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setIsDragOver(false);
+    const files = Array.from(event.dataTransfer.files).filter((f) => f.type.startsWith('image/'));
+    if (!files.length) return;
+    try {
+      const loadedLayers = await Promise.all(files.map(loadImage));
+      setLayers((current) => [
+        ...loadedLayers.map((item, index) => ({
+          id: `${Date.now()}-${index}`,
+          name: item.name,
+          image: item.image,
+          visible: true,
+          opacity: 1,
+          scale: 1,
+          rotation: 0,
+          offsetX: 0,
+          offsetY: 0,
+          blendMode: 'source-over' as BlendMode,
+          placement: 'below-overlays' as LayerPlacement,
+        })),
+        ...current,
+      ]);
+      setStatusMessage(`${files.length} layer${files.length > 1 ? 's' : ''} loaded.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to load one or more images.';
+      setStatusMessage(message);
+    }
   }
 
   function drawDial(context: CanvasRenderingContext2D, size: number, showGuides: boolean) {
@@ -1569,36 +1592,86 @@ function App() {
   }
 
   return (
-    <div className="app-shell" style={{ '--header-offset': `${headerOffsetPx}px` } as CSSProperties}>
-      <header className={`hero${isHeroCompact ? ' hero--compact' : ''}`} ref={heroRef}>
-        <div className="hero-content">
-          <h1>Watch Dial Lab</h1>
-          <p className="hero-copy">
-            From first sketch to print-ready artwork, shape the balance, typography, and cutouts of your dial.
-          </p>
-        </div>
-      </header>
+    <div className="app-shell">
+      {/* Global accessible status region — announces all user feedback to screen readers */}
+      <p role="status" aria-live="polite" className="status-message">{statusMessage}</p>
 
       <main className="workspace-grid">
         <div className="visual-column">
           <section className="panel preview-panel preview-workspace">
             <div className="section-heading">
               <h2>Preview</h2>
-              <button type="button" className="export-button" onClick={exportPng}>
-                Download
-              </button>
+              <div className="preview-header-actions">
+                <label className="checkbox-row" title="Toggle alignment guides on the preview canvas">
+                  <input type="checkbox" checked={gridVisible} onChange={(event) => setGridVisible(event.target.checked)} />
+                  Grid
+                </label>
+                <button type="button" className="export-button" onClick={exportPng}>
+                  Export PNG
+                </button>
+              </div>
             </div>
 
-            <div className="preview-frame">
-              <canvas
-                ref={previewCanvasRef}
-                className="preview-canvas"
-                style={{ cursor: previewCursor }}
-                onPointerDown={handlePreviewPointerDown}
-                onPointerMove={handlePreviewPointerMove}
-                onPointerUp={handlePreviewPointerUp}
-                onPointerCancel={handlePreviewPointerUp}
-              />
+            <figure className="preview-figure">
+              <div className="preview-frame">
+                <canvas
+                  ref={previewCanvasRef}
+                  className="preview-canvas"
+                  role="img"
+                  aria-label="Interactive watch dial preview. Click a layer to select it, then drag to move, use the corner handle to scale, or the top handle to rotate."
+                  style={{ cursor: previewCursor }}
+                  onPointerDown={handlePreviewPointerDown}
+                  onPointerMove={handlePreviewPointerMove}
+                  onPointerUp={handlePreviewPointerUp}
+                  onPointerCancel={handlePreviewPointerUp}
+                />
+              </div>
+              <figcaption className="preview-caption">
+                {selectedLayerId
+                  ? `Editing layer — drag to move · corner handle to scale · top handle to rotate`
+                  : `Click a layer in the canvas to select it`}
+              </figcaption>
+            </figure>
+
+            <div className="export-group">
+              <div className="control-grid compact">
+                <label>
+                  Dial Diameter (mm)
+                  <input
+                    type="number"
+                    min="10"
+                    max="80"
+                    step="0.01"
+                    value={dialDiameterMm}
+                    onChange={(event) => setDialDiameterMm(Number(event.target.value))}
+                  />
+                </label>
+                <label>
+                  Export DPI
+                  <input
+                    type="number"
+                    min="72"
+                    max="2400"
+                    step="10"
+                    value={exportDpi}
+                    onChange={(event) => setExportDpi(Number(event.target.value))}
+                  />
+                </label>
+              </div>
+              <div className="spec-list">
+                <div>
+                  <span>Output size</span>
+                  <strong>{dialPixelDiameter}px</strong>
+                </div>
+                <div>
+                  <span>Megapixels</span>
+                  <strong>{((dialPixelDiameter * dialPixelDiameter) / 1_000_000).toFixed(1)} MP</strong>
+                </div>
+                <div>
+                  <span>Active font</span>
+                  <strong>{selectedFont}</strong>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -1611,10 +1684,15 @@ function App() {
               </label>
             </div>
 
-            <div className="layer-stack">
+            <div
+              className={`layer-stack${isDragOver ? ' layer-stack--drag-over' : ''}`}
+              onDragOver={handleLayerDragOver}
+              onDragLeave={handleLayerDragLeave}
+              onDrop={handleLayerDrop}
+            >
               {layers.length === 0 ? (
                 <div className="empty-state">
-                  <p>Drop in dial textures, lume masks, logo art, or base renders.</p>
+                  <p>Drop image files here, or use Add Images above.</p>
                 </div>
               ) : (
                 layers.map((layer, index) => (
@@ -1622,28 +1700,40 @@ function App() {
                     <div className="layer-card__header">
                       <div>
                         <h3>{layer.name}</h3>
-                        <p>Layer {layers.length - index}</p>
+                        <p>Layer {layers.length - index} — renders {index === 0 ? 'on top' : index === layers.length - 1 ? 'at base' : 'in stack'}</p>
                       </div>
                       <div className="layer-actions">
                         <button
                           type="button"
                           className={selectedLayerId === layer.id ? 'is-active' : ''}
+                          aria-pressed={selectedLayerId === layer.id}
                           onClick={() => setSelectedLayerId((current) => (current === layer.id ? null : layer.id))}
                         >
                           {selectedLayerId === layer.id ? 'Editing' : 'Edit'}
                         </button>
-                        <button type="button" onClick={() => moveLayer(layer.id, -1)}>
-                          Up
+                        <button type="button" title="Move up in stack (renders lower)" onClick={() => moveLayer(layer.id, -1)}>
+                          ↑ Up
                         </button>
-                        <button type="button" onClick={() => moveLayer(layer.id, 1)}>
-                          Down
+                        <button type="button" title="Move down in stack (renders higher)" onClick={() => moveLayer(layer.id, 1)}>
+                          ↓ Down
                         </button>
                         <button type="button" onClick={() => duplicateLayer(layer.id)}>
                           Duplicate
                         </button>
-                        <button type="button" className="danger" onClick={() => removeLayer(layer.id)}>
-                          Remove
-                        </button>
+                        {pendingRemoveId === layer.id && pendingRemoveKind === 'layer' ? (
+                          <>
+                            <button type="button" className="danger confirm-danger" onClick={confirmRemove}>
+                              Confirm Remove
+                            </button>
+                            <button type="button" className="secondary-button" onClick={cancelRemove}>
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <button type="button" className="danger" onClick={() => requestRemove(layer.id, 'layer')}>
+                            Remove
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -1658,7 +1748,7 @@ function App() {
 
                     <div className="control-grid compact">
                       <label>
-                        Opacity
+                        <span className="label-with-value">Opacity <output>{Math.round(layer.opacity * 100)}%</output></span>
                         <input
                           type="range"
                           min="0"
@@ -1682,7 +1772,7 @@ function App() {
                         </select>
                       </label>
                       <label>
-                        Blend
+                        Blend Mode
                         <select
                           value={layer.blendMode}
                           onChange={(event) =>
@@ -1691,13 +1781,13 @@ function App() {
                         >
                           {blendModes.map((mode) => (
                             <option key={mode} value={mode}>
-                              {mode}
+                              {blendModeLabels[mode]}
                             </option>
                           ))}
                         </select>
                       </label>
                       <label>
-                        Scale
+                        <span className="label-with-value">Scale <output>{layer.scale.toFixed(2)}×</output></span>
                         <input
                           type="range"
                           min="0.1"
@@ -1708,7 +1798,7 @@ function App() {
                         />
                       </label>
                       <label>
-                        Rotation
+                        <span className="label-with-value">Rotation <output>{layer.rotation}°</output></span>
                         <input
                           type="range"
                           min="-180"
@@ -1719,7 +1809,7 @@ function App() {
                         />
                       </label>
                       <label>
-                        Offset X
+                        <span className="label-with-value">Offset X <output>{layer.offsetX.toFixed(1)}</output></span>
                         <input
                           type="range"
                           min="-40"
@@ -1730,7 +1820,7 @@ function App() {
                         />
                       </label>
                       <label>
-                        Offset Y
+                        <span className="label-with-value">Offset Y <output>{layer.offsetY.toFixed(1)}</output></span>
                         <input
                           type="range"
                           min="-40"
@@ -1749,6 +1839,15 @@ function App() {
         </div>
 
         <section className="panel controls-panel setup-panel">
+            <header className="hero">
+              <div className="hero-content">
+                <h1>Watch Dial Lab</h1>
+                <p className="hero-copy">
+                  From first sketch to print-ready artwork, shape the balance, typography, and cutouts of your dial.
+                </p>
+              </div>
+            </header>
+
             <div className="section-heading">
               <h2>Dial Setup</h2>
             </div>
@@ -1778,11 +1877,10 @@ function App() {
                   </select>
                 </label>
 
-                {displayPresetId !== 'custom' ? (
-                  <div className="preset-note preset-note--inline">
-                    {selectedDisplayPreset.note}
-                  </div>
-                ) : null}
+                {/* Always show preset note — custom preset has its own guidance text */}
+                <div className="preset-note preset-note--inline">
+                  {selectedDisplayPreset.note}
+                </div>
 
                 <div className="preset-actions">
                   <label>
@@ -1794,25 +1892,38 @@ function App() {
                       placeholder="My display preset"
                     />
                   </label>
-                  <button type="button" className="secondary-button" onClick={saveDisplayPreset}>
-                    Save
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={updateSavedDisplayPreset}
-                    disabled={!isSavedDisplayPreset}
-                  >
-                    Update
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary-button danger-button"
-                    onClick={deleteSavedDisplayPreset}
-                    disabled={!isSavedDisplayPreset}
-                  >
-                    Delete
-                  </button>
+                  {isSavedDisplayPreset ? (
+                    <>
+                      <button type="button" className="secondary-button" onClick={updateSavedDisplayPreset}>
+                        Update
+                      </button>
+                      <button type="button" className="secondary-button" onClick={saveDisplayPreset}>
+                        Save as New
+                      </button>
+                      {pendingRemoveId === displayPresetId && pendingRemoveKind === 'preset' ? (
+                        <>
+                          <button type="button" className="secondary-button danger-button confirm-danger" onClick={confirmRemove}>
+                            Confirm Delete
+                          </button>
+                          <button type="button" className="secondary-button" onClick={cancelRemove}>
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className="secondary-button danger-button"
+                          onClick={() => requestRemove(displayPresetId, 'preset')}
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <button type="button" className="secondary-button" onClick={saveDisplayPreset}>
+                      Save
+                    </button>
+                  )}
                 </div>
 
                 <section className="settings-group">
@@ -1824,12 +1935,13 @@ function App() {
                     <div className="settings-subgroup settings-subgroup--marker-top">
                       <div className="toggle-field">
                         <span>Indices Style</span>
-                        <div className="segmented-control">
+                        <div className="segmented-control" role="group" aria-label="Indices style">
                           {markerOptions.map((option) => (
                             <button
                               type="button"
                               key={option.value}
                               className={markerStyle === option.value ? 'is-active' : ''}
+                              aria-pressed={markerStyle === option.value}
                               onClick={() => setMarkerStyle(option.value)}
                             >
                               {option.label}
@@ -1847,7 +1959,7 @@ function App() {
                           </label>
                         )}
                       <label>
-                        Indices Opacity
+                        <span className="label-with-value">Indices Opacity <output>{Math.round(indicesOpacity * 100)}%</output></span>
                         <input
                           type="range"
                           min="0"
@@ -1868,12 +1980,13 @@ function App() {
 
                         <div className="toggle-field">
                           <span>Custom Index Orientation</span>
-                          <div className="segmented-control segmented-control--two">
+                          <div className="segmented-control segmented-control--two" role="group" aria-label="Custom index orientation">
                             {customMarkerOrientationOptions.map((option) => (
                               <button
                                 type="button"
                                 key={option.value}
                                 className={customMarkerOrientation === option.value ? 'is-active' : ''}
+                                aria-pressed={customMarkerOrientation === option.value}
                                 onClick={() => setCustomMarkerOrientation(option.value)}
                               >
                                 {option.label}
@@ -1883,7 +1996,7 @@ function App() {
                         </div>
 
                         <label>
-                          Custom Index Rotation
+                          <span className="label-with-value">Custom Index Rotation <output>{customMarkerRotationDeg}°</output></span>
                           <input
                             type="range"
                             min="-180"
@@ -1913,7 +2026,7 @@ function App() {
 
                     <div className="settings-subgroup settings-subgroup--marker-band">
                       <label>
-                        Indices Inner Radius
+                        <span className="label-with-value">Indices Inner Radius <output>{markerInnerRadius.toFixed(2)}</output></span>
                         <input
                           type="range"
                           min="0.2"
@@ -1925,7 +2038,7 @@ function App() {
                       </label>
 
                       <label>
-                        Indices Outer Radius
+                        <span className="label-with-value">Indices Outer Radius <output>{markerOuterRadius.toFixed(2)}</output></span>
                         <input
                           type="range"
                           min="0.25"
@@ -1938,7 +2051,7 @@ function App() {
                       </label>
 
                       <label>
-                        Indices Weight
+                        <span className="label-with-value">Indices Weight <output>{markerWeight.toFixed(2)}</output></span>
                         <input
                           type="range"
                           min="0.5"
@@ -1960,12 +2073,13 @@ function App() {
                   <div className="control-grid compact control-grid--settings-group">
                     <div className="toggle-field">
                       <span>Numeral Style</span>
-                      <div className="segmented-control segmented-control--three">
+                      <div className="segmented-control segmented-control--three" role="group" aria-label="Numeral style">
                         {numeralStyleOptions.map((option) => (
                           <button
                             type="button"
                             key={option.value}
                             className={numeralStyle === option.value ? 'is-active' : ''}
+                            aria-pressed={numeralStyle === option.value}
                             onClick={() => setNumeralStyle(option.value)}
                           >
                             {option.label}
@@ -1976,12 +2090,13 @@ function App() {
 
                     <div className="toggle-field">
                       <span>Numeral Layout</span>
-                      <div className="segmented-control segmented-control--two">
+                      <div className="segmented-control segmented-control--two" role="group" aria-label="Numeral layout">
                         {numeralLayoutOptions.map((option) => (
                           <button
                             type="button"
                             key={option.value}
                             className={numeralLayout === option.value ? 'is-active' : ''}
+                            aria-pressed={numeralLayout === option.value}
                             onClick={() => setNumeralLayout(option.value)}
                             disabled={numeralStyle === 'none'}
                           >
@@ -1997,7 +2112,7 @@ function App() {
                     </label>
 
                     <label>
-                      Numerals Opacity
+                      <span className="label-with-value">Numerals Opacity <output>{Math.round(numeralsOpacity * 100)}%</output></span>
                       <input
                         type="range"
                         min="0"
@@ -2025,7 +2140,7 @@ function App() {
                     </label>
 
                     <label>
-                      Font Size
+                      <span className="label-with-value">Font Size <output>{fontSize}px</output></span>
                       <input
                         type="range"
                         min="16"
@@ -2037,7 +2152,7 @@ function App() {
                     </label>
 
                     <label>
-                      Font Weight
+                      <span className="label-with-value">Font Weight <output>{fontWeight}</output></span>
                       <input
                         type="range"
                         min="300"
@@ -2049,7 +2164,7 @@ function App() {
                     </label>
 
                     <label>
-                      Numerals Radius
+                      <span className="label-with-value">Numerals Radius <output>{numberRadius.toFixed(2)}</output></span>
                       <input
                         type="range"
                         min="0.45"
@@ -2061,7 +2176,7 @@ function App() {
                     </label>
 
                     <label>
-                      Numerals Offset X
+                      <span className="label-with-value">Numerals Offset X <output>{numeralOffsetX.toFixed(1)}</output></span>
                       <input
                         type="range"
                         min="-25"
@@ -2073,7 +2188,7 @@ function App() {
                     </label>
 
                     <label>
-                      Numerals Offset Y
+                      <span className="label-with-value">Numerals Offset Y <output>{numeralOffsetY.toFixed(1)}</output></span>
                       <input
                         type="range"
                         min="-25"
@@ -2142,7 +2257,7 @@ function App() {
                     </label>
 
                     <label>
-                      Edge Opacity
+                      <span className="label-with-value">Edge Opacity <output>{Math.round(innerEdgeOpacity * 100)}%</output></span>
                       <input
                         type="range"
                         min="0"
@@ -2155,7 +2270,7 @@ function App() {
                     </label>
 
                     <label>
-                      Edge Weight
+                      <span className="label-with-value">Edge Weight <output>{innerEdgeWeight.toFixed(3)}</output></span>
                       <input
                         type="range"
                         min="0.002"
@@ -2168,35 +2283,7 @@ function App() {
                     </label>
                   </div>
                 </section>
-
-                <label>
-                  Dial Diameter (mm)
-                  <input
-                    type="number"
-                    min="10"
-                    max="80"
-                    step="0.01"
-                    value={dialDiameterMm}
-                    onChange={(event) => setDialDiameterMm(Number(event.target.value))}
-                  />
-                </label>
-                <label>
-                  Export DPI
-                  <input
-                    type="number"
-                    min="72"
-                    max="2400"
-                    step="10"
-                    value={exportDpi}
-                    onChange={(event) => setExportDpi(Number(event.target.value))}
-                  />
-                </label>
               </div>
-
-              <label className="checkbox-row boxed">
-                <input type="checkbox" checked={gridVisible} onChange={(event) => setGridVisible(event.target.checked)} />
-                Show Alignment Grid
-              </label>
 
               <div className="cutouts-panel">
                 <div className="section-heading section-heading--tight">
@@ -2232,9 +2319,20 @@ function App() {
                             />
                             Enabled
                           </label>
-                          <button type="button" className="secondary-button danger-button" onClick={() => removeCutout(cutout.id)}>
-                            Delete
-                          </button>
+                          {pendingRemoveId === cutout.id && pendingRemoveKind === 'cutout' ? (
+                            <div className="confirm-remove-row">
+                              <button type="button" className="secondary-button danger-button confirm-danger" onClick={confirmRemove}>
+                                Confirm Delete
+                              </button>
+                              <button type="button" className="secondary-button" onClick={cancelRemove}>
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button type="button" className="secondary-button danger-button" onClick={() => requestRemove(cutout.id, 'cutout')}>
+                              Delete
+                            </button>
+                          )}
                         </div>
 
                         <div className="control-grid compact">
@@ -2328,35 +2426,18 @@ function App() {
                   </div>
                 )}
               </div>
-
-              <div className="spec-list">
-                <div>
-                  <span>Dial pixel diameter</span>
-                  <strong>{dialPixelDiameter}px</strong>
-                </div>
-                <div>
-                  <span>Export square size</span>
-                  <strong>{squarePixelSize}px</strong>
-                </div>
-                <div>
-                  <span>Selected font</span>
-                  <strong>{selectedFont}</strong>
-                </div>
-              </div>
             </div>
+
+            <a className="coffee-link" href="https://www.buymeacoffee.com/muskegg" target="_blank" rel="noreferrer">
+              <img
+                src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png"
+                alt="Buy Me A Coffee"
+                width="217"
+                height="60"
+              />
+            </a>
         </section>
       </main>
-
-      <footer className="app-footer">
-        <a className="coffee-link" href="https://www.buymeacoffee.com/muskegg" target="_blank" rel="noreferrer">
-          <img
-            src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png"
-            alt="Buy Me A Coffee"
-            width="217"
-            height="60"
-          />
-        </a>
-      </footer>
     </div>
   );
 }
