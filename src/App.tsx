@@ -1679,14 +1679,6 @@ function App() {
                   <span>Output size</span>
                   <strong>{dialPixelDiameter} × {dialPixelDiameter} px</strong>
                 </div>
-                <div>
-                  <span>Megapixels</span>
-                  <strong>{((dialPixelDiameter * dialPixelDiameter) / 1_000_000).toFixed(1)} MP</strong>
-                </div>
-                <div>
-                  <span>Active font</span>
-                  <strong>{selectedFont}</strong>
-                </div>
               </div>
             </div>
           </section>
@@ -2244,24 +2236,28 @@ function App() {
                   </div>
                 </section>
 
-                <label>
-                  Background Color
-                  <input
-                    type="color"
-                    value={backgroundColor}
-                    onChange={(event) => setBackgroundColor(event.target.value)}
-                    disabled={transparentBackground}
-                  />
-                </label>
-
-                <label className="checkbox-row boxed">
-                  <input
-                    type="checkbox"
-                    checked={transparentBackground}
-                    onChange={(event) => setTransparentBackground(event.target.checked)}
-                  />
-                  Transparent Background
-                </label>
+                <section className="settings-group">
+                  <div className="settings-group__heading">
+                    <h3>Background</h3>
+                  </div>
+                  <div className="background-row">
+                    <input
+                      type="color"
+                      value={backgroundColor}
+                      onChange={(event) => setBackgroundColor(event.target.value)}
+                      disabled={transparentBackground}
+                      title="Background color"
+                    />
+                    <label className="checkbox-row boxed">
+                      <input
+                        type="checkbox"
+                        checked={transparentBackground}
+                        onChange={(event) => setTransparentBackground(event.target.checked)}
+                      />
+                      Transparent
+                    </label>
+                  </div>
+                </section>
 
                 <section className="settings-group">
                   <div className="settings-group__heading">

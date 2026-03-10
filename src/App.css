@@ -47,24 +47,20 @@
 }
 
 .spec-list div {
-  border: 1px solid var(--border);
-  border-radius: 1.2rem;
-  background: linear-gradient(180deg, rgba(16, 30, 40, 0.78), rgba(7, 14, 18, 0.92));
-  padding: 1rem 1.1rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
 }
 
 .spec-list span {
-  display: block;
   color: var(--muted);
   font-size: 0.8rem;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .spec-list strong {
-  display: block;
-  margin-top: 0.25rem;
-  font-size: 1.4rem;
+  font-size: 0.95rem;
 }
 
 .workspace-grid {
@@ -329,6 +325,27 @@
   min-height: 3rem;
   padding: 0.7rem 1rem;
   white-space: nowrap;
+}
+
+.background-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.background-row input[type='color'] {
+  flex: 1;
+  height: 2.6rem;
+  min-width: 0;
+  padding: 0.2rem;
+  border-radius: 0.6rem;
+  cursor: pointer;
+}
+
+.background-row .checkbox-row.boxed {
+  flex-shrink: 0;
+  white-space: nowrap;
+  margin: 0;
 }
 
 .settings-group {
@@ -640,9 +657,9 @@ input[type='range'] {
 }
 
 .spec-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 .cutouts-panel {
