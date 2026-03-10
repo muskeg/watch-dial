@@ -2030,7 +2030,11 @@ function App() {
                           max="0.95"
                           step="0.01"
                           value={markerInnerRadius}
-                          onChange={(event) => setMarkerInnerRadius(Number(event.target.value))}
+                          onChange={(event) => {
+                            const v = Number(event.target.value);
+                            setMarkerInnerRadius(v);
+                            if (v > markerOuterRadius) setMarkerOuterRadius(v);
+                          }}
                         />
                       </label>
 
@@ -2043,7 +2047,11 @@ function App() {
                           max="0.98"
                           step="0.01"
                           value={markerOuterRadius}
-                          onChange={(event) => setMarkerOuterRadius(Number(event.target.value))}
+                          onChange={(event) => {
+                            const v = Number(event.target.value);
+                            setMarkerOuterRadius(v);
+                            if (v < markerInnerRadius) setMarkerInnerRadius(v);
+                          }}
                           disabled={markerStyle === 'dots'}
                         />
                       </label>
