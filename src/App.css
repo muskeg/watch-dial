@@ -236,10 +236,9 @@
   gap: 0.75rem;
 }
 
-.preview-header-actions .checkbox-row {
-  gap: 0.45rem;
-  color: var(--muted);
-  font-size: 0.9rem;
+.grid-toggle {
+  max-width: min(82vh, 100%);
+  margin: 0.45rem auto 0;
   cursor: pointer;
   white-space: nowrap;
 }

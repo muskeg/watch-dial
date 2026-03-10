@@ -474,10 +474,10 @@ function App() {
   const [innerEdgeWeight, setInnerEdgeWeight] = useState(0.012);
   const [dialDiameterMm, setDialDiameterMm] = useState(38);
   const [exportDpi, setExportDpi] = useState(600);
-  const [markerInnerRadius, setMarkerInnerRadius] = useState(0.76);
+  const [markerInnerRadius, setMarkerInnerRadius] = useState(0.80);
   const [markerOuterRadius, setMarkerOuterRadius] = useState(0.93);
   const [markerWeight, setMarkerWeight] = useState(1);
-  const [numberRadius, setNumberRadius] = useState(0.73);
+  const [numberRadius, setNumberRadius] = useState(0.70);
   const [numeralOffsetX, setNumeralOffsetX] = useState(0);
   const [numeralOffsetY, setNumeralOffsetY] = useState(0);
   const [hideQuarterIndices, setHideQuarterIndices] = useState(false);
@@ -1201,9 +1201,10 @@ function App() {
       return;
     }
 
+    const { cutoutStroke, cutoutFill } = computeGuideColors();
     context.save();
-    context.strokeStyle = 'rgba(106, 208, 186, 0.92)';
-    context.fillStyle = 'rgba(106, 208, 186, 0.12)';
+    context.strokeStyle = cutoutStroke;
+    context.fillStyle = cutoutFill;
     context.lineWidth = 1.5;
     context.setLineDash([6, 4]);
 
@@ -1247,10 +1248,28 @@ function App() {
     context.restore();
   }
 
+  function computeGuideColors() {
+    if (transparentBackground) {
+      return { line: 'rgba(244, 162, 97, 0.55)', dot: 'rgba(106, 208, 186, 0.80)', cutoutStroke: 'rgba(106, 208, 186, 0.92)', cutoutFill: 'rgba(106, 208, 186, 0.12)' };
+    }
+    const hex = backgroundColor.replace(/^#/, '');
+    if (hex.length === 6) {
+      const r = parseInt(hex.slice(0, 2), 16) / 255;
+      const g = parseInt(hex.slice(2, 4), 16) / 255;
+      const b = parseInt(hex.slice(4, 6), 16) / 255;
+      const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      if (lum > 0.35) {
+        return { line: 'rgba(180, 70, 10, 0.65)', dot: 'rgba(20, 130, 110, 0.85)', cutoutStroke: 'rgba(20, 130, 110, 0.92)', cutoutFill: 'rgba(20, 130, 110, 0.15)' };
+      }
+    }
+    return { line: 'rgba(244, 162, 97, 0.42)', dot: 'rgba(106, 208, 186, 0.72)', cutoutStroke: 'rgba(106, 208, 186, 0.92)', cutoutFill: 'rgba(106, 208, 186, 0.12)' };
+  }
+
   function drawGuides(context: CanvasRenderingContext2D, center: number, radius: number) {
+    const { line, dot } = computeGuideColors();
     context.save();
-    context.strokeStyle = 'rgba(244, 162, 97, 0.42)';
-    context.fillStyle = 'rgba(106, 208, 186, 0.72)';
+    context.strokeStyle = line;
+    context.fillStyle = dot;
     context.lineWidth = Math.max(1, radius * 0.004);
     context.setLineDash([radius * 0.02, radius * 0.015]);
 
@@ -1590,10 +1609,6 @@ function App() {
             <div className="section-heading">
               <h2>Preview</h2>
               <div className="preview-header-actions">
-                <label className="checkbox-row" title="Toggle alignment guides on the preview canvas">
-                  <input type="checkbox" checked={gridVisible} onChange={(event) => setGridVisible(event.target.checked)} />
-                  Grid
-                </label>
                 <button type="button" className="export-button" onClick={exportPng}>
                   Export PNG
                 </button>
@@ -1614,6 +1629,10 @@ function App() {
                   onPointerCancel={handlePreviewPointerUp}
                 />
               </div>
+              <label className="checkbox-row grid-toggle" title="Toggle alignment guides on the preview canvas">
+                <input type="checkbox" checked={gridVisible} onChange={(event) => setGridVisible(event.target.checked)} />
+                Grid
+              </label>
               <figcaption className="preview-caption">
                 {selectedLayerId
                   ? `Editing layer — drag to move · corner handle to scale · top handle to rotate`
@@ -1849,7 +1868,7 @@ function App() {
             <div className="setup-scroll">
               <div className="control-grid">
                 <label>
-                  Display Preset
+                  Display / Movement Preset
                   <select value={displayPresetId} onChange={(event) => applyDisplayPreset(event.target.value)}>
                     <option value={CUSTOM_DISPLAY_PRESET.id}>{CUSTOM_DISPLAY_PRESET.label}</option>
                     <optgroup label="Built-in">
