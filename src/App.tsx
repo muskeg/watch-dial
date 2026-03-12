@@ -322,58 +322,6 @@ const builtInDisplayPresets: DisplayPreset[] = [
       { id: 'pinion', name: 'Hands Post', kind: 'circle', enabled: true, xMm: 0, yMm: 0, diameterMm: 2.0 },
     ],
   },
-  {
-    id: 'vk63',
-    label: 'Seiko VK63',
-    note: 'Seiko/TMI VK63 meca-quartz chronograph with 29.00 mm dial, 1.02 mm centre post, date window at 4H, and three 5.50 mm subdials. Subdial positions approximate — verify against movement.',
-    dialDiameterMm: 29.0,
-    cutouts: [
-      { id: 'pinion', name: 'Centre Post', kind: 'circle', enabled: true, xMm: 0, yMm: 0, diameterMm: 1.02 },
-      {
-        // TODO: verify date window position
-        id: 'date',
-        name: 'Date Window',
-        kind: 'rounded-rect',
-        enabled: true,
-        xMm: 4.37,
-        yMm: -0.55,
-        widthMm: 2.8,
-        heightMm: 2.8,
-        radiusMm: 0.15,
-        rotationDeg: 0,
-      },
-      {
-        // TODO: verify subdial position
-        id: 'subdial-seconds',
-        name: 'Small Seconds',
-        kind: 'circle',
-        enabled: true,
-        xMm: -7.5,
-        yMm: 7.5,
-        diameterMm: 5.5,
-      },
-      {
-        // TODO: verify subdial position
-        id: 'subdial-minutes',
-        name: 'Minute Counter',
-        kind: 'circle',
-        enabled: true,
-        xMm: 7.5,
-        yMm: 7.5,
-        diameterMm: 5.5,
-      },
-      {
-        // TODO: verify subdial position
-        id: 'subdial-24h',
-        name: '24h Indicator',
-        kind: 'circle',
-        enabled: true,
-        xMm: -7.5,
-        yMm: -7.5,
-        diameterMm: 5.5,
-      },
-    ],
-  },
 ];
 
 function createId(prefix: string) {
