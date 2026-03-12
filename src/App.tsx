@@ -1,56 +1,8 @@
 import { ChangeEvent, DragEvent, PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 import './App.css';
 import * as renderer from './dial-renderer';
-
-type MarkerStyle = 'none' | 'baton' | 'diver' | 'dots' | 'dagger' | 'custom';
-
-type CustomMarkerOrientation = 'fixed' | 'toward-center';
-
-type NumeralStyle = 'none' | 'arabic' | 'roman';
-
-type NumeralLayout = 'quarters' | 'full';
-
-type Cutout =
-  | {
-      id: string;
-      name: string;
-      kind: 'circle';
-      enabled: boolean;
-      xMm: number;
-      yMm: number;
-      diameterMm: number;
-    }
-  | {
-      id: string;
-      name: string;
-      kind: 'rounded-rect';
-      enabled: boolean;
-      xMm: number;
-      yMm: number;
-      widthMm: number;
-      heightMm: number;
-      radiusMm: number;
-      rotationDeg: number;
-    };
-
-type DisplayPreset = {
-  id: string;
-  label: string;
-  note: string;
-  cutouts: Cutout[];
-  dialDiameterMm?: number;
-};
-
-type BlendMode =
-  | 'source-over'
-  | 'multiply'
-  | 'screen'
-  | 'overlay'
-  | 'darken'
-  | 'lighten'
-  | 'soft-light';
-
-type LayerPlacement = 'below-overlays' | 'above-indices' | 'above-numerals';
+import type { BlendMode, Cutout, CustomMarkerOrientation, DisplayPreset, LayerPlacement, MarkerStyle, NumeralLayout, NumeralStyle, SavedDesignMeta, SerializedDesign, SerializedLayer } from './design-storage';
+import { deleteDesign, isSerializedDesign, listSavedDesigns, loadDesign, saveDesign } from './design-storage';
 
 type Layer = {
   id: string;
@@ -181,6 +133,7 @@ const numeralLayoutOptions: { label: string; value: NumeralLayout }[] = [
 const fullRomanLabels = ['XII', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI'];
 
 const DISPLAY_PRESETS_STORAGE_KEY = 'watch-dial.display-presets.v1';
+const AUTOSAVE_ID = '__autosave__';
 
 const CUSTOM_DISPLAY_PRESET: DisplayPreset = {
   id: 'custom',
@@ -414,6 +367,25 @@ function loadImage(file: File) {
   });
 }
 
+function imageToDataUrl(image: HTMLImageElement): string {
+  const canvas = document.createElement('canvas');
+  canvas.width = image.naturalWidth || image.width;
+  canvas.height = image.naturalHeight || image.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return image.src;
+  ctx.drawImage(image, 0, 0);
+  return canvas.toDataURL('image/png');
+}
+
+function dataUrlToImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Failed to load image'));
+    img.src = src;
+  });
+}
+
 function makeLayer(name: string, image: HTMLImageElement, creationIndex: number): Layer {
   return {
     id: createId('layer'),
@@ -478,6 +450,9 @@ function App() {
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const previewInteractionRef = useRef<PreviewInteraction | null>(null);
   const nextLayerIndex = useRef(1);
+  const designRestoredRef = useRef(false);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const serializeRef = useRef<() => SerializedDesign>(null!);
   const [heroCollapsed, setHeroCollapsed] = useState(false);
   const [layers, setLayers] = useState<Layer[]>([]);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
@@ -517,15 +492,36 @@ function App() {
   const [presetDraftName, setPresetDraftName] = useState('');
   const [cutouts, setCutouts] = useState<Cutout[]>([]);
   const [gridVisible, setGridVisible] = useState(true);
-  const [statusMessage, setStatusMessage] = useState('Add layers, tune the index style, then export a high-resolution PNG.');
+  const [statusMessage, setStatusMessageState] = useState('Add layers, tune the index style, then export a high-resolution PNG.');
+  const [toastKey, setToastKey] = useState(0);
   const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
-  const [pendingRemoveKind, setPendingRemoveKind] = useState<'layer' | 'cutout' | 'preset' | null>(null);
+  const [pendingRemoveKind, setPendingRemoveKind] = useState<'layer' | 'cutout' | 'preset' | 'design' | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [savedDesigns, setSavedDesigns] = useState<SavedDesignMeta[]>([]);
+  const [selectedDesignId, setSelectedDesignId] = useState<string | null>(null);
+  const [designNameDraft, setDesignNameDraft] = useState('My Design');
+  const [toastVisible, setToastVisible] = useState(false);
+
+  function setStatusMessage(text: string) {
+    setStatusMessageState(text);
+    setToastKey((k) => k + 1);
+  }
 
   const dialPixelDiameter = Math.max(1, Math.round((dialDiameterMm / 25.4) * exportDpi));
   const allDisplayPresets = [CUSTOM_DISPLAY_PRESET, ...builtInDisplayPresets, ...savedDisplayPresets];
   const selectedDisplayPreset = allDisplayPresets.find((preset) => preset.id === displayPresetId) ?? CUSTOM_DISPLAY_PRESET;
   const isSavedDisplayPreset = savedDisplayPresets.some((preset) => preset.id === displayPresetId);
+
+  // Keep serializeRef current so the debounced auto-save always captures the latest state
+  serializeRef.current = serializeCurrentDesign;
+
+  // Show toast on every setStatusMessage call, even if text is the same
+  useEffect(() => {
+    if (!toastKey) return;
+    setToastVisible(true);
+    const timer = setTimeout(() => setToastVisible(false), 3000);
+    return () => clearTimeout(timer);
+  }, [toastKey]);
 
   useEffect(() => {
     if (selectedLayerId && !layers.some((layer) => layer.id === selectedLayerId)) {
@@ -618,6 +614,47 @@ function App() {
     selectedLayerId,
     selectedFont,
     transparentBackground,
+  ]);
+
+  // Restore auto-save on mount and hydrate the saved-designs list
+  useEffect(() => {
+    async function restore() {
+      try {
+        const [saved, metas] = await Promise.all([loadDesign(AUTOSAVE_ID), listSavedDesigns()]);
+        setSavedDesigns(metas.filter((m) => m.id !== AUTOSAVE_ID));
+        if (saved) {
+          await applySerializedDesign(saved);
+        }
+      } catch {
+        // Ignore on first visit / corrupted data
+      } finally {
+        designRestoredRef.current = true;
+      }
+    }
+    void restore();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Debounced auto-save — fires 1.5 s after the last design state change
+  useEffect(() => {
+    if (!designRestoredRef.current) return;
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      try {
+        const design = serializeRef.current();
+        void saveDesign({ id: AUTOSAVE_ID, name: '__autosave__', savedAt: design.savedAt, design });
+      } catch { /* ignore */ }
+    }, 1500);
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, [
+    layers, markerStyle, customMarkerImage, customMarkerName, customMarkerOrientation,
+    customMarkerRotationDeg, numeralStyle, numeralLayout, selectedFont, fontSize, fontWeight,
+    markerColor, indicesOpacity, numeralColor, numeralsOpacity, backgroundColor,
+    transparentBackground, innerEdgeEnabled, innerEdgeColor, innerEdgeOpacity, innerEdgeWeight,
+    dialDiameterMm, exportDpi, markerInnerRadius, markerOuterRadius, markerWeight,
+    numberRadius, numeralOffsetX, numeralOffsetY, hideQuarterIndices, displayPresetId,
+    savedDisplayPresets, cutouts,
   ]);
 
   async function handleLayerUpload(event: ChangeEvent<HTMLInputElement>) {
@@ -1078,7 +1115,7 @@ function App() {
     setStatusMessage(`${presetToDelete?.label ?? 'Preset'} deleted.`);
   }
 
-  function requestRemove(id: string, kind: 'layer' | 'cutout' | 'preset') {
+  function requestRemove(id: string, kind: 'layer' | 'cutout' | 'preset' | 'design') {
     setPendingRemoveId(id);
     setPendingRemoveKind(kind);
   }
@@ -1088,6 +1125,7 @@ function App() {
     if (pendingRemoveKind === 'layer') removeLayer(pendingRemoveId);
     if (pendingRemoveKind === 'cutout') removeCutout(pendingRemoveId);
     if (pendingRemoveKind === 'preset') deleteSavedDisplayPreset(pendingRemoveId);
+    if (pendingRemoveKind === 'design') void handleDeleteDesign(pendingRemoveId);
     setPendingRemoveId(null);
     setPendingRemoveKind(null);
   }
@@ -1372,10 +1410,182 @@ function App() {
     }, 'image/png');
   }
 
+  // ─── Serialization ──────────────────────────────────────────────────────────
+
+  function serializeCurrentDesign(): SerializedDesign {
+    return {
+      version: 1,
+      savedAt: Date.now(),
+      layers: layers.map(({ image, ...rest }) => ({ ...rest, imageSrc: imageToDataUrl(image) } satisfies SerializedLayer)),
+      markerStyle,
+      customMarkerImageSrc: customMarkerImage ? imageToDataUrl(customMarkerImage) : null,
+      customMarkerName,
+      customMarkerOrientation,
+      customMarkerRotationDeg,
+      numeralStyle,
+      numeralLayout,
+      selectedFont,
+      fontSize,
+      fontWeight,
+      markerColor,
+      indicesOpacity,
+      numeralColor,
+      numeralsOpacity,
+      backgroundColor,
+      transparentBackground,
+      innerEdgeEnabled,
+      innerEdgeColor,
+      innerEdgeOpacity,
+      innerEdgeWeight,
+      dialDiameterMm,
+      exportDpi,
+      markerInnerRadius,
+      markerOuterRadius,
+      markerWeight,
+      numberRadius,
+      numeralOffsetX,
+      numeralOffsetY,
+      hideQuarterIndices,
+      displayPresetId,
+      savedDisplayPresets,
+      cutouts,
+    };
+  }
+
+  async function applySerializedDesign(saved: SerializedDesign) {
+    const restoredLayers = await Promise.all(
+      saved.layers.map(async ({ imageSrc, ...rest }) => ({
+        ...rest,
+        image: await dataUrlToImage(imageSrc),
+      } as Layer)),
+    );
+
+    const maxIndex = restoredLayers.reduce((max, l) => Math.max(max, l.creationIndex), 0);
+    nextLayerIndex.current = maxIndex + 1;
+    setLayers(restoredLayers);
+    setMarkerStyle(saved.markerStyle);
+    setCustomMarkerName(saved.customMarkerName);
+    setCustomMarkerOrientation(saved.customMarkerOrientation);
+    setCustomMarkerRotationDeg(saved.customMarkerRotationDeg);
+    setNumeralStyle(saved.numeralStyle);
+    setNumeralLayout(saved.numeralLayout);
+    setSelectedFont(saved.selectedFont);
+    setFontSize(saved.fontSize);
+    setFontWeight(saved.fontWeight);
+    setMarkerColor(saved.markerColor);
+    setIndicesOpacity(saved.indicesOpacity);
+    setNumeralColor(saved.numeralColor);
+    setNumeralsOpacity(saved.numeralsOpacity);
+    setBackgroundColor(saved.backgroundColor);
+    setTransparentBackground(saved.transparentBackground);
+    setInnerEdgeEnabled(saved.innerEdgeEnabled);
+    setInnerEdgeColor(saved.innerEdgeColor);
+    setInnerEdgeOpacity(saved.innerEdgeOpacity);
+    setInnerEdgeWeight(saved.innerEdgeWeight);
+    setDialDiameterMm(saved.dialDiameterMm);
+    setExportDpi(saved.exportDpi);
+    setMarkerInnerRadius(saved.markerInnerRadius);
+    setMarkerOuterRadius(saved.markerOuterRadius);
+    setMarkerWeight(saved.markerWeight);
+    setNumberRadius(saved.numberRadius);
+    setNumeralOffsetX(saved.numeralOffsetX);
+    setNumeralOffsetY(saved.numeralOffsetY);
+    setHideQuarterIndices(saved.hideQuarterIndices);
+    setDisplayPresetId(saved.displayPresetId);
+    setSavedDisplayPresets(saved.savedDisplayPresets);
+    setCutouts(saved.cutouts);
+    if (saved.customMarkerImageSrc) {
+      setCustomMarkerImage(await dataUrlToImage(saved.customMarkerImageSrc));
+    } else {
+      setCustomMarkerImage(null);
+    }
+  }
+
+  // ─── Design library handlers ────────────────────────────────────────────────
+
+  async function handleSaveDesign() {
+    const name = designNameDraft.trim();
+    if (!name) {
+      setStatusMessage('Enter a design name before saving.');
+      return;
+    }
+    const design = serializeCurrentDesign();
+    const existing = savedDesigns.find((d) => d.name.toLowerCase() === name.toLowerCase());
+    const id = existing?.id ?? createId('design');
+    await saveDesign({ id, name, savedAt: design.savedAt, design });
+    if (existing) {
+      setSavedDesigns((current) =>
+        current.map((d) => (d.id === id ? { id, name, savedAt: design.savedAt } : d)),
+      );
+      setStatusMessage(`Design "${name}" updated.`);
+    } else {
+      setSavedDesigns((current) => [...current, { id, name, savedAt: design.savedAt }]);
+      setStatusMessage(`Design "${name}" saved.`);
+    }
+  }
+
+  async function handleLoadDesign(id: string) {
+    try {
+      const design = await loadDesign(id);
+      if (!design) {
+        setStatusMessage('Could not load design.');
+        return;
+      }
+      await applySerializedDesign(design);
+      const meta = savedDesigns.find((d) => d.id === id);
+      setStatusMessage(`Design "${meta?.name ?? 'design'}" loaded.`);
+    } catch {
+      setStatusMessage('Failed to load design.');
+    }
+  }
+
+  async function handleDeleteDesign(id: string) {
+    try {
+      const meta = savedDesigns.find((d) => d.id === id);
+      await deleteDesign(id);
+      setSavedDesigns((current) => current.filter((d) => d.id !== id));
+      setStatusMessage(`Design "${meta?.name ?? 'design'}" deleted.`);
+    } catch {
+      setStatusMessage('Failed to delete design.');
+    }
+  }
+
+  function handleExportDesign() {
+    const design = serializeCurrentDesign();
+    const name = (designNameDraft.trim() || 'watch-dial').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    const blob = new Blob([JSON.stringify(design, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${name}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setStatusMessage(`Design exported as "${link.download}".`);
+  }
+
+  async function handleImportDesign(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const parsed: unknown = JSON.parse(await file.text());
+      if (!isSerializedDesign(parsed)) {
+        setStatusMessage('Invalid design file — expected a Watch Dial Lab .json export.');
+        return;
+      }
+      await applySerializedDesign(parsed);
+      setDesignNameDraft(file.name.replace(/\.json$/i, ''));
+      setStatusMessage(`Design imported from "${file.name}".`);
+    } catch {
+      setStatusMessage(`Failed to import "${file.name}". Make sure it's a valid design file.`);
+    } finally {
+      event.target.value = '';
+    }
+  }
+
   return (
     <div className="app-shell">
-      {/* Global accessible status region — announces all user feedback to screen readers */}
-      <p role="status" aria-live="polite" className="status-message">{statusMessage}</p>
+      {/* Accessible status region for screen readers + visible toast */}
+      <p role="status" aria-live="polite" className={`status-message${toastVisible ? ' status-message--visible' : ''}`}>{statusMessage}</p>
 
       <main className="workspace-grid">
         <header className={`hero${heroCollapsed ? ' hero--collapsed' : ''}`}>
@@ -1632,6 +1842,83 @@ function App() {
         </div>
 
         <div className="controls-column" onScroll={(e) => { if (e.currentTarget.scrollTop > 40) setHeroCollapsed(true); }}>
+        <section className="panel controls-panel designs-panel">
+          <div className="section-heading">
+            <h2>Designs</h2>
+          </div>
+
+          <div className="preset-actions designs-save-row">
+            <label className="designs-name-label">
+              Design Name
+              <input
+                type="text"
+                value={designNameDraft}
+                onChange={(event) => setDesignNameDraft(event.target.value)}
+                placeholder="My Design"
+              />
+            </label>
+            <button type="button" className="secondary-button" onClick={() => void handleSaveDesign()}>
+              Save
+            </button>
+            <div className="designs-file-buttons">
+              <button type="button" className="secondary-button" onClick={handleExportDesign}>
+                Export .json
+              </button>
+              <label className="upload-button secondary">
+                <input type="file" accept=".json" onChange={(event) => void handleImportDesign(event)} />
+                Import .json
+              </label>
+            </div>
+          </div>
+
+          {savedDesigns.length > 0 ? (
+            <div className="designs-load-row">
+              <label className="designs-select-label">
+                Saved Designs
+                <select
+                  value={selectedDesignId ?? ''}
+                  onChange={(event) => setSelectedDesignId(event.target.value || null)}
+                >
+                  <option value="">— select a design —</option>
+                  {savedDesigns.map((meta) => (
+                    <option key={meta.id} value={meta.id}>{meta.name}</option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={!selectedDesignId}
+                onClick={() => selectedDesignId && void handleLoadDesign(selectedDesignId)}
+              >
+                Load
+              </button>
+              {pendingRemoveId === selectedDesignId && pendingRemoveKind === 'design' ? (
+                <>
+                  <button type="button" className="secondary-button danger-button confirm-danger" onClick={confirmRemove}>
+                    Confirm Delete
+                  </button>
+                  <button type="button" className="secondary-button" onClick={cancelRemove}>
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="secondary-button danger-button"
+                  disabled={!selectedDesignId}
+                  onClick={() => selectedDesignId && requestRemove(selectedDesignId, 'design')}
+                >
+                  Delete
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <p>No saved designs yet. Save your current work above, or import a .json file.</p>
+            </div>
+          )}
+        </section>
         <section className="panel controls-panel setup-panel">
             <div className="section-heading">
               <h2>Dial Setup</h2>
