@@ -1,5 +1,6 @@
 import { ChangeEvent, DragEvent, PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 import './App.css';
+import * as renderer from './dial-renderer';
 
 type MarkerStyle = 'none' | 'baton' | 'diver' | 'dots' | 'dagger' | 'custom';
 
@@ -289,6 +290,36 @@ const builtInDisplayPresets: DisplayPreset[] = [
         yMm: -0.0558,
         diameterMm: 10,
       },
+    ],
+  },
+  {
+    id: 'miyota-9015-date-3h',
+    label: 'Miyota 9015 Date 3H',
+    note: 'Miyota 9015 date at 3H with 30.00 mm dial, 2.00 mm hands post, and 2.70 × 2.00 mm date window centred 10.20 mm from dial centre.',
+    dialDiameterMm: 30,
+    cutouts: [
+      { id: 'pinion', name: 'Hands Post', kind: 'circle', enabled: true, xMm: 0, yMm: 0, diameterMm: 2.0 },
+      {
+        id: 'date',
+        name: 'Date Window',
+        kind: 'rounded-rect',
+        enabled: true,
+        xMm: 10.2,
+        yMm: 0,
+        widthMm: 2.7,
+        heightMm: 2.0,
+        radiusMm: 0.15,
+        rotationDeg: 0,
+      },
+    ],
+  },
+  {
+    id: 'miyota-9039-no-date',
+    label: 'Miyota 9039 No-Date',
+    note: 'Miyota 9039 no-date with 30.00 mm dial and 2.00 mm hands post. Same dial footprint as the 9015, no date window.',
+    dialDiameterMm: 30,
+    cutouts: [
+      { id: 'pinion', name: 'Hands Post', kind: 'circle', enabled: true, xMm: 0, yMm: 0, diameterMm: 2.0 },
     ],
   },
 ];
@@ -1158,42 +1189,11 @@ function App() {
   }
 
   function drawInnerEdge(context: CanvasRenderingContext2D, center: number, radius: number) {
-    const lineWidth = Math.max(1.5, radius * clamp(innerEdgeWeight, 0.002, 0.08));
-    const edgeRadius = radius - lineWidth / 2;
-
-    if (edgeRadius <= 0) {
-      return;
-    }
-
-    context.save();
-    context.globalAlpha = innerEdgeOpacity;
-    context.strokeStyle = innerEdgeColor;
-    context.lineWidth = lineWidth;
-    context.beginPath();
-    context.arc(center, center, edgeRadius, 0, Math.PI * 2);
-    context.stroke();
-    context.restore();
+    renderer.drawInnerEdge(context, center, radius, { innerEdgeColor, innerEdgeOpacity, innerEdgeWeight });
   }
 
   function applyCutouts(context: CanvasRenderingContext2D, center: number, pixelsPerMm: number) {
-    if (!cutouts.some((cutout) => cutout.enabled)) {
-      return;
-    }
-
-    context.save();
-    context.globalCompositeOperation = 'destination-out';
-    context.fillStyle = '#000000';
-
-    for (const cutout of cutouts) {
-      if (!cutout.enabled) {
-        continue;
-      }
-
-      drawCutoutPath(context, cutout, center, pixelsPerMm);
-      context.fill();
-    }
-
-    context.restore();
+    renderer.applyCutouts(context, cutouts, center, pixelsPerMm);
   }
 
   function drawCutoutGuides(context: CanvasRenderingContext2D, center: number, pixelsPerMm: number) {
@@ -1227,25 +1227,7 @@ function App() {
     center: number,
     pixelsPerMm: number,
   ) {
-    const x = center + cutout.xMm * pixelsPerMm;
-    const y = center + cutout.yMm * pixelsPerMm;
-
-    context.beginPath();
-
-    if (cutout.kind === 'circle') {
-      context.arc(x, y, (cutout.diameterMm * pixelsPerMm) / 2, 0, Math.PI * 2);
-      return;
-    }
-
-    const width = cutout.widthMm * pixelsPerMm;
-    const height = cutout.heightMm * pixelsPerMm;
-    const radius = Math.min(cutout.radiusMm * pixelsPerMm, width / 2, height / 2);
-
-    context.save();
-    context.translate(x, y);
-    context.rotate(degToRad(cutout.rotationDeg));
-    context.roundRect(-width / 2, -height / 2, width, height, radius);
-    context.restore();
+    renderer.drawCutoutPath(context, cutout, center, pixelsPerMm);
   }
 
   function computeGuideColors() {
@@ -1307,230 +1289,28 @@ function App() {
     fontScale: number,
     stage: 'indices' | 'numerals',
   ) {
-    context.save();
-    context.strokeStyle = markerColor;
-    context.lineCap = 'round';
-    context.lineJoin = 'round';
-
-    const bandInner = Math.min(markerInnerRadius, markerOuterRadius);
-    const bandOuter = Math.max(markerInnerRadius, markerOuterRadius);
-    const bandMiddle = (bandInner + bandOuter) / 2;
-    const bandSpan = Math.max(0.01, bandOuter - bandInner);
-    const suppressQuarterIndices = hideQuarterIndices && numeralStyle !== 'none' && numeralLayout === 'quarters';
-
-    if (stage === 'indices' && markerStyle === 'baton') {
-      context.globalAlpha = indicesOpacity;
-      for (let marker = 0; marker < 12; marker += 1) {
-        if (suppressQuarterIndices && quarterIndexPositions.has(marker)) {
-          continue;
-        }
-
-        const angle = degToRad(marker * 30 - 90);
-        const inner = radius * bandInner;
-        const outer = radius * Math.min(0.98, bandOuter);
-        context.lineWidth = radius * 0.042 * markerWeight;
-        context.beginPath();
-        context.moveTo(center + Math.cos(angle) * inner, center + Math.sin(angle) * inner);
-        context.lineTo(center + Math.cos(angle) * outer, center + Math.sin(angle) * outer);
-        context.stroke();
-      }
-    }
-
-    if (stage === 'indices' && markerStyle === 'diver') {
-      context.globalAlpha = indicesOpacity;
-      for (let marker = 0; marker < 60; marker += 1) {
-        if (marker === 0) {
-          continue;
-        }
-
-        if (suppressQuarterIndices && marker % 5 === 0 && quarterIndexPositions.has(marker / 5)) {
-          continue;
-        }
-
-        const angle = degToRad(marker * 6 - 90);
-        const isHour = marker % 5 === 0;
-        const minuteInset = bandSpan * 0.26;
-        const inner = radius * (isHour ? bandInner : Math.min(0.98, bandInner + minuteInset));
-        const outer = radius * Math.min(0.98, isHour ? bandOuter : bandOuter - minuteInset * 0.8);
-        context.lineWidth = radius * (isHour ? 0.034 : 0.012) * markerWeight;
-        context.beginPath();
-        context.moveTo(center + Math.cos(angle) * inner, center + Math.sin(angle) * inner);
-        context.lineTo(center + Math.cos(angle) * outer, center + Math.sin(angle) * outer);
-        context.stroke();
-      }
-
-      if (!suppressQuarterIndices) {
-        const triangleRadius = radius * Math.min(0.98, bandOuter + 0.01);
-        const triangleBaseRadius = radius * Math.min(0.98, bandOuter - Math.min(0.02, bandSpan * 0.18));
-        const triangleOffsetY = radius * 0.018;
-        const triangleHalfWidth = radius * 0.06 * markerWeight;
-        context.fillStyle = markerColor;
-        context.beginPath();
-        context.moveTo(center - triangleHalfWidth, center - triangleBaseRadius - triangleOffsetY);
-        context.lineTo(center + triangleHalfWidth, center - triangleBaseRadius - triangleOffsetY);
-        context.lineTo(center, center - triangleRadius + radius * 0.11 - triangleOffsetY);
-        context.closePath();
-        context.fill();
-      }
-    }
-
-    if (stage === 'indices' && markerStyle === 'dots') {
-      context.globalAlpha = indicesOpacity;
-      context.fillStyle = markerColor;
-
-      for (let marker = 0; marker < 12; marker += 1) {
-        if (suppressQuarterIndices && quarterIndexPositions.has(marker)) {
-          continue;
-        }
-
-        const angle = degToRad(marker * 30 - 90);
-        const dotRadius = radius * (marker === 0 ? 0.05 : 0.036) * markerWeight;
-        const orbit = radius * bandMiddle;
-        context.beginPath();
-        context.arc(
-          center + Math.cos(angle) * orbit,
-          center + Math.sin(angle) * orbit,
-          dotRadius,
-          0,
-          Math.PI * 2,
-        );
-        context.fill();
-      }
-    }
-
-    if (stage === 'indices' && markerStyle === 'dagger') {
-      context.globalAlpha = indicesOpacity;
-      context.fillStyle = markerColor;
-
-      for (let marker = 0; marker < 12; marker += 1) {
-        if (suppressQuarterIndices && quarterIndexPositions.has(marker)) {
-          continue;
-        }
-
-        const angle = degToRad(marker * 30 - 90);
-        const tipX = radius * bandInner;
-        const tailX = radius * Math.min(0.98, bandOuter - bandSpan * 0.04);
-        const upperShoulderX = radius * (bandInner + bandSpan * 0.78);
-        const lowerShoulderX = radius * (bandInner + bandSpan * 0.44);
-        const tailHalfWidth = radius * 0.017 * markerWeight;
-        const shoulderHalfWidth = radius * 0.015 * markerWeight;
-        const lowerHalfWidth = radius * 0.0075 * markerWeight;
-        const capBulge = radius * 0.024 * markerWeight;
-
-        context.save();
-        context.translate(center, center);
-        context.rotate(angle);
-        context.beginPath();
-        context.moveTo(tailX, -tailHalfWidth);
-        context.bezierCurveTo(
-          tailX + capBulge,
-          -tailHalfWidth,
-          tailX + capBulge,
-          tailHalfWidth,
-          tailX,
-          tailHalfWidth,
-        );
-        context.bezierCurveTo(
-          upperShoulderX,
-          shoulderHalfWidth,
-          lowerShoulderX,
-          lowerHalfWidth,
-          tipX,
-          0,
-        );
-        context.bezierCurveTo(
-          lowerShoulderX,
-          -lowerHalfWidth,
-          upperShoulderX,
-          -shoulderHalfWidth,
-          tailX,
-          -tailHalfWidth,
-        );
-        context.closePath();
-        context.fill();
-        context.restore();
-      }
-    }
-
-    if (stage === 'indices' && markerStyle === 'custom' && customMarkerImage) {
-      context.globalAlpha = indicesOpacity;
-      const imageAspect = customMarkerImage.width / Math.max(1, customMarkerImage.height);
-      const imageHeight = Math.max(radius * 0.05, radius * bandSpan * 1.15) * markerWeight;
-      const imageWidth = imageHeight * imageAspect;
-      const orbit = radius * bandMiddle;
-
-      for (let marker = 0; marker < 12; marker += 1) {
-        if (suppressQuarterIndices && quarterIndexPositions.has(marker)) {
-          continue;
-        }
-
-        const angle = degToRad(marker * 30 - 90);
-        const rotation =
-          customMarkerOrientation === 'toward-center'
-            ? angle + Math.PI * 1.5 + degToRad(customMarkerRotationDeg)
-            : degToRad(customMarkerRotationDeg);
-
-        context.save();
-        context.translate(center + Math.cos(angle) * orbit, center + Math.sin(angle) * orbit);
-        context.rotate(rotation);
-        context.drawImage(customMarkerImage, -imageWidth / 2, -imageHeight / 2, imageWidth, imageHeight);
-        context.restore();
-      }
-    }
-
-    if (stage === 'numerals' && numeralStyle === 'arabic' && numeralLayout === 'quarters') {
-      context.globalAlpha = numeralsOpacity;
-      drawQuarterNumerals(context, center, radius, fontScale, ['12', '3', '6', '9']);
-    }
-
-    if (stage === 'numerals' && numeralStyle === 'roman' && numeralLayout === 'quarters') {
-      context.globalAlpha = numeralsOpacity;
-      drawQuarterNumerals(context, center, radius, fontScale, ['XII', 'III', 'VI', 'IX']);
-    }
-
-    if (stage === 'numerals' && numeralStyle === 'arabic' && numeralLayout === 'full') {
-      context.globalAlpha = numeralsOpacity;
-      context.fillStyle = numeralColor;
-      context.font = `${fontWeight} ${fontSize * fontScale}px ${quoteFontFamily(selectedFont)}`;
-      context.textAlign = 'center';
-      context.textBaseline = 'middle';
-      const offsetX = (numeralOffsetX / 100) * radius * 2;
-      const offsetY = (numeralOffsetY / 100) * radius * 2;
-
-      for (let marker = 0; marker < 12; marker += 1) {
-        const angle = degToRad(marker * 30 - 90);
-        const label = marker === 0 ? '12' : `${marker}`;
-        const numeralRadius = radius * clamp(numberRadius, 0.45, 1);
-        context.fillText(
-          label,
-          center + Math.cos(angle) * numeralRadius + offsetX,
-          center + Math.sin(angle) * numeralRadius + offsetY,
-        );
-      }
-
-    }
-
-    if (stage === 'numerals' && numeralStyle === 'roman' && numeralLayout === 'full') {
-      context.globalAlpha = numeralsOpacity;
-      context.fillStyle = numeralColor;
-      context.font = `${fontWeight} ${fontSize * fontScale}px ${quoteFontFamily(selectedFont)}`;
-      context.textAlign = 'center';
-      context.textBaseline = 'middle';
-      const offsetX = (numeralOffsetX / 100) * radius * 2;
-      const offsetY = (numeralOffsetY / 100) * radius * 2;
-
-      for (let marker = 0; marker < 12; marker += 1) {
-        const angle = degToRad(marker * 30 - 90);
-        const numeralRadius = radius * clamp(numberRadius, 0.45, 1);
-        context.fillText(
-          fullRomanLabels[marker],
-          center + Math.cos(angle) * numeralRadius + offsetX,
-          center + Math.sin(angle) * numeralRadius + offsetY,
-        );
-      }
-    }
-
-    context.restore();
+    renderer.drawOverlay(context, center, radius, fontScale, stage, {
+      markerStyle,
+      markerColor,
+      indicesOpacity,
+      markerInnerRadius,
+      markerOuterRadius,
+      markerWeight,
+      hideQuarterIndices,
+      numeralStyle,
+      numeralLayout,
+      customMarkerImage,
+      customMarkerOrientation,
+      customMarkerRotationDeg,
+      numeralsOpacity,
+      numeralColor,
+      fontWeight,
+      fontSize,
+      selectedFont,
+      numberRadius,
+      numeralOffsetX,
+      numeralOffsetY,
+    });
   }
 
   function drawQuarterNumerals(
