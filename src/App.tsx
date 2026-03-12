@@ -295,19 +295,18 @@ const builtInDisplayPresets: DisplayPreset[] = [
   {
     id: 'miyota-9015-date-3h',
     label: 'Miyota 9015 Date 3H',
-    note: 'Miyota 9015 date at 3H with 25.60 mm dial, 2.00 mm hands post, and 2.83 × 2.00 mm date window.',
-    dialDiameterMm: 25.6,
+    note: 'Miyota 9015 date at 3H with 30.00 mm dial, 2.00 mm hands post, and 2.70 × 2.00 mm date window centred 10.20 mm from dial centre.',
+    dialDiameterMm: 30,
     cutouts: [
       { id: 'pinion', name: 'Hands Post', kind: 'circle', enabled: true, xMm: 0, yMm: 0, diameterMm: 2.0 },
-      // TODO: verify date window position (y may be 0 for true 3H alignment)
       {
         id: 'date',
         name: 'Date Window',
         kind: 'rounded-rect',
         enabled: true,
-        xMm: 11.85,
-        yMm: -2.83,
-        widthMm: 2.83,
+        xMm: 10.2,
+        yMm: 0,
+        widthMm: 2.7,
         heightMm: 2.0,
         radiusMm: 0.15,
         rotationDeg: 0,
@@ -317,8 +316,8 @@ const builtInDisplayPresets: DisplayPreset[] = [
   {
     id: 'miyota-9039-no-date',
     label: 'Miyota 9039 No-Date',
-    note: 'Miyota 9039 no-date with 25.60 mm dial and 2.00 mm hands post. Same dial footprint as the 9015, no date window.',
-    dialDiameterMm: 25.6,
+    note: 'Miyota 9039 no-date with 30.00 mm dial and 2.00 mm hands post. Same dial footprint as the 9015, no date window.',
+    dialDiameterMm: 30,
     cutouts: [
       { id: 'pinion', name: 'Hands Post', kind: 'circle', enabled: true, xMm: 0, yMm: 0, diameterMm: 2.0 },
     ],
