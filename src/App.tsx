@@ -386,6 +386,138 @@ function dataUrlToImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
+function readUint32BigEndian(bytes: Uint8Array, offset: number) {
+  return (
+    (bytes[offset] * 0x1000000) +
+    (bytes[offset + 1] << 16) +
+    (bytes[offset + 2] << 8) +
+    bytes[offset + 3]
+  ) >>> 0;
+}
+
+let crcTable: Uint32Array | null = null;
+
+function getCrcTable() {
+  if (crcTable) {
+    return crcTable;
+  }
+
+  const table = new Uint32Array(256);
+
+  for (let i = 0; i < 256; i += 1) {
+    let c = i;
+    for (let j = 0; j < 8; j += 1) {
+      c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    }
+    table[i] = c >>> 0;
+  }
+
+  crcTable = table;
+  return table;
+}
+
+function computeCrc32(bytes: Uint8Array) {
+  const table = getCrcTable();
+  let crc = 0xffffffff;
+
+  for (let i = 0; i < bytes.length; i += 1) {
+    crc = table[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+  }
+
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function createPngChunk(type: string, data: Uint8Array) {
+  const chunk = new Uint8Array(12 + data.length);
+  const view = new DataView(chunk.buffer);
+  view.setUint32(0, data.length, false);
+
+  for (let i = 0; i < 4; i += 1) {
+    chunk[4 + i] = type.charCodeAt(i);
+  }
+
+  chunk.set(data, 8);
+
+  const crcInput = new Uint8Array(4 + data.length);
+  crcInput.set(chunk.subarray(4, 8), 0);
+  crcInput.set(data, 4);
+  view.setUint32(8 + data.length, computeCrc32(crcInput), false);
+
+  return chunk;
+}
+
+function concatUint8Arrays(parts: Uint8Array[]) {
+  const size = parts.reduce((sum, part) => sum + part.length, 0);
+  const merged = new Uint8Array(size);
+  let offset = 0;
+
+  for (const part of parts) {
+    merged.set(part, offset);
+    offset += part.length;
+  }
+
+  return merged;
+}
+
+async function addPngDpiMetadata(blob: Blob, dpi: number) {
+  const effectiveDpi = Math.max(1, Math.round(dpi));
+  const buffer = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  const pngSignature = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+
+  if (bytes.length < pngSignature.length) {
+    return blob;
+  }
+
+  for (let i = 0; i < pngSignature.length; i += 1) {
+    if (bytes[i] !== pngSignature[i]) {
+      return blob;
+    }
+  }
+
+  const pixelsPerMeter = Math.max(1, Math.round(effectiveDpi / 0.0254));
+  const physData = new Uint8Array(9);
+  const physView = new DataView(physData.buffer);
+  physView.setUint32(0, pixelsPerMeter, false);
+  physView.setUint32(4, pixelsPerMeter, false);
+  physData[8] = 1;
+  const physChunk = createPngChunk('pHYs', physData);
+
+  const outputChunks: Uint8Array[] = [pngSignature];
+  let offset = pngSignature.length;
+  let insertedPhys = false;
+
+  while (offset + 8 <= bytes.length) {
+    const length = readUint32BigEndian(bytes, offset);
+    const chunkTotal = 12 + length;
+
+    if (offset + chunkTotal > bytes.length) {
+      return blob;
+    }
+
+    const typeBytes = bytes.subarray(offset + 4, offset + 8);
+    const type = String.fromCharCode(typeBytes[0], typeBytes[1], typeBytes[2], typeBytes[3]);
+    const chunk = bytes.subarray(offset, offset + chunkTotal);
+
+    if (type === 'IHDR') {
+      outputChunks.push(chunk);
+      outputChunks.push(physChunk);
+      insertedPhys = true;
+    } else if (type !== 'pHYs') {
+      outputChunks.push(chunk);
+    }
+
+    offset += chunkTotal;
+  }
+
+  if (!insertedPhys) {
+    return blob;
+  }
+
+  const outputBytes = concatUint8Arrays(outputChunks);
+  return new Blob([outputBytes], { type: 'image/png' });
+}
+
 function makeLayer(name: string, image: HTMLImageElement, creationIndex: number): Layer {
   return {
     id: createId('layer'),
@@ -1393,13 +1525,15 @@ function App() {
     }
 
     drawDial(context, dialPixelDiameter, false);
-    canvas.toBlob((blob) => {
+    canvas.toBlob(async (blob) => {
       if (!blob) {
         setStatusMessage('Unable to encode the PNG.');
         return;
       }
 
-      const exportUrl = URL.createObjectURL(blob);
+      const exportBlob = await addPngDpiMetadata(blob, exportDpi);
+
+      const exportUrl = URL.createObjectURL(exportBlob);
       const link = document.createElement('a');
       const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
       link.href = exportUrl;
