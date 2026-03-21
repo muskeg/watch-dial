@@ -7,7 +7,7 @@ const STORE_NAME = 'designs';
 
 // ─── Shared domain types (imported by App.tsx) ───────────────────────────────
 
-export type MarkerStyle = 'none' | 'baton' | 'diver' | 'dots' | 'dagger' | 'custom';
+export type MarkerStyle = 'none' | 'baton' | 'bauhaus' | 'diver' | 'dots' | 'dagger' | 'custom';
 
 export type CustomMarkerOrientation = 'fixed' | 'toward-center';
 
@@ -91,6 +91,7 @@ export type SerializedDesign = {
   fontSize: number;
   fontWeight: number;
   markerColor: string;
+  markerSecondaryColor: string;
   indicesOpacity: number;
   numeralColor: string;
   numeralsOpacity: number;

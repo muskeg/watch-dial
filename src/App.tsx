@@ -101,6 +101,7 @@ const markerOptions: { label: string; value: MarkerStyle }[] = [
   { label: 'Diver', value: 'diver' },
   { label: 'Dots', value: 'dots' },
   { label: 'Spear', value: 'dagger' },
+  { label: 'Bauhaus', value: 'bauhaus' },
   { label: 'Custom', value: 'custom' },
 ];
 
@@ -601,6 +602,7 @@ function App() {
   const [fontSize, setFontSize] = useState(48);
   const [fontWeight, setFontWeight] = useState(700);
   const [markerColor, setMarkerColor] = useState('#f7efe0');
+  const [markerSecondaryColor, setMarkerSecondaryColor] = useState('#f7efe0');
   const [indicesOpacity, setIndicesOpacity] = useState(1);
   const [numeralColor, setNumeralColor] = useState('#f4d7b2');
   const [numeralsOpacity, setNumeralsOpacity] = useState(1);
@@ -727,6 +729,7 @@ function App() {
     innerEdgeOpacity,
     layers,
     markerColor,
+    markerSecondaryColor,
     markerInnerRadius,
     markerOuterRadius,
     markerWeight,
@@ -782,7 +785,7 @@ function App() {
   }, [
     layers, markerStyle, customMarkerImage, customMarkerName, customMarkerOrientation,
     customMarkerRotationDeg, numeralStyle, numeralLayout, selectedFont, fontSize, fontWeight,
-    markerColor, indicesOpacity, numeralColor, numeralsOpacity, backgroundColor,
+    markerColor, markerSecondaryColor, indicesOpacity, numeralColor, numeralsOpacity, backgroundColor,
     transparentBackground, innerEdgeEnabled, innerEdgeColor, innerEdgeOpacity, innerEdgeWeight,
     dialDiameterMm, exportDpi, markerInnerRadius, markerOuterRadius, markerWeight,
     numberRadius, numeralOffsetX, numeralOffsetY, hideQuarterIndices, displayPresetId,
@@ -1462,6 +1465,7 @@ function App() {
     renderer.drawOverlay(context, center, radius, fontScale, stage, {
       markerStyle,
       markerColor,
+      markerSecondaryColor,
       indicesOpacity,
       markerInnerRadius,
       markerOuterRadius,
@@ -1562,6 +1566,7 @@ function App() {
       fontSize,
       fontWeight,
       markerColor,
+      markerSecondaryColor,
       indicesOpacity,
       numeralColor,
       numeralsOpacity,
@@ -1607,6 +1612,7 @@ function App() {
     setFontSize(saved.fontSize);
     setFontWeight(saved.fontWeight);
     setMarkerColor(saved.markerColor);
+    setMarkerSecondaryColor(saved.markerSecondaryColor ?? saved.markerColor);
     setIndicesOpacity(saved.indicesOpacity);
     setNumeralColor(saved.numeralColor);
     setNumeralsOpacity(saved.numeralsOpacity);
@@ -2164,6 +2170,12 @@ function App() {
                             <input type="color" value={markerColor} onChange={(event) => setMarkerColor(event.target.value)} />
                           </label>
                         )}
+                        {markerStyle === 'bauhaus' ? (
+                          <label>
+                            Minute Dots Color
+                            <input type="color" value={markerSecondaryColor} onChange={(event) => setMarkerSecondaryColor(event.target.value)} />
+                          </label>
+                        ) : null}
                       <label>
                         <span className="label-with-value">Indices Opacity <output htmlFor="indices-opacity">{Math.round(indicesOpacity * 100)}%</output></span>
                         <input
@@ -2264,7 +2276,7 @@ function App() {
                             setMarkerOuterRadius(v);
                             if (v < markerInnerRadius) setMarkerInnerRadius(v);
                           }}
-                          disabled={markerStyle === 'dots'}
+                          disabled={markerStyle === 'dots' || markerStyle === 'bauhaus'}
                         />
                       </label>
 

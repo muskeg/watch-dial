@@ -1,7 +1,7 @@
 // Pure render functions extracted from App.tsx for testability.
 // All closed-over React state is replaced with explicit parameters.
 
-export type MarkerStyle = 'none' | 'baton' | 'diver' | 'dots' | 'dagger' | 'custom';
+export type MarkerStyle = 'none' | 'baton' | 'bauhaus' | 'diver' | 'dots' | 'dagger' | 'custom';
 
 export type CustomMarkerOrientation = 'fixed' | 'toward-center';
 
@@ -41,6 +41,7 @@ export interface DrawInnerEdgeOptions {
 export interface DrawOverlayOptions {
   markerStyle: MarkerStyle;
   markerColor: string;
+  markerSecondaryColor: string;
   indicesOpacity: number;
   markerInnerRadius: number;
   markerOuterRadius: number;
@@ -291,6 +292,54 @@ export function drawOverlay(
       const angle = degToRad(marker * 30 - 90);
       const dotRadius = radius * (marker === 0 ? 0.05 : 0.036) * opts.markerWeight;
       const orbit = radius * bandMiddle;
+      context.beginPath();
+      context.arc(
+        center + Math.cos(angle) * orbit,
+        center + Math.sin(angle) * orbit,
+        dotRadius,
+        0,
+        Math.PI * 2,
+      );
+      context.fill();
+    }
+  }
+
+  if (stage === 'indices' && opts.markerStyle === 'bauhaus') {
+    context.globalAlpha = opts.indicesOpacity;
+
+    const orbit = radius * bandMiddle;
+
+    // Minute dots (60 positions, skip 5-minute marks)
+    context.fillStyle = opts.markerSecondaryColor;
+    for (let minute = 0; minute < 60; minute += 1) {
+      if (minute % 5 === 0) continue;
+      const angle = degToRad(minute * 6 - 90);
+      const dotRadius = radius * 0.006 * opts.markerWeight;
+      context.beginPath();
+      context.arc(
+        center + Math.cos(angle) * orbit,
+        center + Math.sin(angle) * orbit,
+        dotRadius,
+        0,
+        Math.PI * 2,
+      );
+      context.fill();
+    }
+
+    // Hour dots at 5-minute marks, size increasing from 1 to 12
+    context.fillStyle = opts.markerColor;
+    const minHourDot = 0.012;
+    const maxHourDot = 0.030;
+    for (let marker = 0; marker < 12; marker += 1) {
+      if (suppressQuarterIndices && quarterIndexPositions.has(marker)) {
+        continue;
+      }
+
+      const angle = degToRad(marker * 30 - 90);
+      // marker 0 = 12 o'clock (largest), 1 = 1 o'clock (smallest), ..., 11 = 11 o'clock
+      const step = marker === 0 ? 12 : marker;
+      const t = (step - 1) / 11;
+      const dotRadius = radius * (minHourDot + t * (maxHourDot - minHourDot)) * opts.markerWeight;
       context.beginPath();
       context.arc(
         center + Math.cos(angle) * orbit,
